@@ -1,5 +1,6 @@
-\documentclass[a4paper,twoside]{article}
+\documentclass{article}
 
+\usepackage[utf8]{inputenc}
 \usepackage{listings}
 \usepackage{color}
 \usepackage{xcolor}
@@ -10,11 +11,11 @@
 
 \begin{document}
 \title{Efficient recovery in a data-flow based storage system}
-\author{Martin Bævre Ek}
+\author{Martin Ek}
 \date{\today}
 \maketitle
 
-\input{macros.latex}
+\input{macros.tex}
 
 \begin{abstract}
   Abstract
@@ -26,6 +27,32 @@
 
 \section{Background}
 \subsection{Soup}
+Modern web applications face an increasingly difficult performance problem in
+relation to their storage needs: traditional relational databases perform too
+poorly when used in isolation. Either by failing to scale to a large amount of
+concurrent users, or by taking too long to return results for more expensive
+aggregation queries.
+
+This is often worked around by building up intricate cache hierarchies, similar
+to the multi-level cache hierarchy readers might be accustomed to seeing in
+their processors. This solves both performance problems: concurrent readers can
+access materialized data from the upper levels of the cache hierarchy, achieving
+low latency and high throughput even when faced with large amounts of clients.
+Expensive queries then only need to be performed once, as long as the result is
+invalidated when the underlying data changes. This touches upon the main problem
+with these cache hierarchies: invalidation. Write operations still need to change
+the underlying storage layer, but are now also responsible for clearing out or
+updating the materialized cache levels.
+% TODO: facebook cache paper
+
+This adds an extra layer of complexity, and is a trade-off accepted by almost
+every modern day developer that faces more than a trivial amount of load to
+their storage system.
+
+Soup sets out to solve this by providing a single system with both high write
+and read performance, removing the need for manual materialization through cache
+systems. Soup
+
 \subsection{Rust}
 
 \section{Results}
