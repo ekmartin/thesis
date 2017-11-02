@@ -1,4 +1,4 @@
-\documentclass{article}
+\documentclass{report}
 
 \usepackage[utf8]{inputenc}
 \usepackage{listings}
@@ -21,9 +21,11 @@
   Abstract
 \end{abstract}
 
-\section{Introduction}
 
 \tableofcontents
+\pagebreak
+
+\section{Introduction}
 
 \section{Background}
 \subsection{Soup}
@@ -51,7 +53,8 @@ their storage system.
 
 Soup sets out to solve this by providing a single system with both high write
 and read performance, removing the need for manual materialization through cache
-systems. Soup
+systems. Soup does this by materializing data automatically in a data-flow
+graph.
 
 \subsection{Rust}
 
