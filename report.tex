@@ -21,23 +21,23 @@
   Abstract
 \end{abstract}
 
-
 \tableofcontents
 \pagebreak
 
-\section{Introduction}
+\chapter{Introduction}
 
-\section{Background}
-\subsection{Soup}
+\chapter{Background}
+\section{Soup}
 Modern web applications face an increasingly difficult performance problem in
 relation to their storage needs: traditional relational databases perform too
 poorly when used in isolation. Either by failing to scale to a large amount of
 concurrent users, or by taking too long to return results for more expensive
 aggregation queries.
 
-This is often worked around by building up intricate cache hierarchies, similar
-to the multi-level cache hierarchy readers might be accustomed to seeing in
-their processors. This solves both performance problems: concurrent readers can
+This is often worked around by building up intricate cache hierarchies
+\cite{facebook}, similar to the multi-level cache hierarchy
+readers might be accustomed to seeing in their processors. This solves both
+performance problems: concurrent readers can
 access materialized data from the upper levels of the cache hierarchy, achieving
 low latency and high throughput even when faced with large amounts of clients.
 Expensive queries then only need to be performed once, as long as the result is
@@ -45,21 +45,32 @@ invalidated when the underlying data changes. This touches upon the main problem
 with these cache hierarchies: invalidation. Write operations still need to change
 the underlying storage layer, but are now also responsible for clearing out or
 updating the materialized cache levels.
-% TODO: facebook cache paper
 
 This adds an extra layer of complexity, and is a trade-off accepted by almost
 every modern day developer that faces more than a trivial amount of load to
 their storage system.
 
-Soup sets out to solve this by providing a single system with both high write
-and read performance, removing the need for manual materialization through cache
-systems. Soup does this by materializing data automatically in a data-flow
-graph.
+Soup sets out to solve this by providing a single high performant system,
+removing the need for manual materialization through cache hierarchies. The
+current prototype scales to millions of writes and reads per second
+\cite{soup} - both on a single machine and in a distributed fashion.
 
-\subsection{Rust}
+Soup does this by materializing data automatically in a data-flow
+graph, building on existing streaming data-flow research \cite{naiad, dataflow}
+by combining it with ideas from performant materialized view solutions
+\cite{dbtoaster, pequod}.
 
-\section{Results}
-\section{Discussion}
+\subsection{Data-flow Graph}
+Soup turns base table schemas and a pre-defined list of queries into a data-flow
+graph that doubles as a set of materialized views. The base tables form the
+root nodes of the graph, and all writes propagate from here. The graph itself
+resembles the query graph of a traditional relational database system
+\cite{codd}, with the graph's intermediate nodes being relational operators.
+
+\section{Rust}
+
+\chapter{Results}
+\chapter{Discussion}
 
 \bibliographystyle{acm}
 \bibliography{sources}
