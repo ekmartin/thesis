@@ -33,13 +33,13 @@ outcome we're looking for.
 ## Implementation
 How snapshotting ended up being implemented.
 
-## Results
+# Results
 Does snapshotting make the system slower (possibly, if it has to block
 messages). Does the throughput go down, or just the latency?
 How does snapshotting compare to log only recovery (the base case)?
 
 If possible, how does recovery speed in Soup compare to other database systems?
 
-## Conclusion
+# Conclusion
 Does the result work well, or does it need a different approach? How will this
 work for future versions of Soup? (This might belong in another segment).

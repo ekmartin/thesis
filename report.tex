@@ -67,8 +67,34 @@ root nodes of the graph, and all writes propagate from here. The graph itself
 resembles the query graph of a traditional relational database system
 \cite{codd}, with the graph's intermediate nodes being relational operators.
 
+However, whereas a relational database management system's query graph is used
+primarily to retrieve data, by executing operators to fetch data from durable
+storage, Soup's graph does the exact opposite. The graph is defined ahead of
+queries being received, and writes stream through the relevant nodes in the
+graph - starting from the base nodes. This skews the majority of the system's
+work towards writes, as results are materialized at different nodes throughout
+the graph.
+
+The query graph includes at least one materialized node per pre-defined query,
+located at the bottom of the graph as leaf nodes. This means that reading from
+the system is a matter of finding the relevant leaf node, and retrieving data
+from the node's materialized storage.
+
+% TODO: something about pre-computed queries and soup being a key-value store
+% TODO: write about how soup uses multi-query optimization to find shared
+% subexpressions among queries
+% TODO: write about data-flow operators
+
+\subsection{Migrations}
+
+\subsection{Transactions}
+
 \section{Rust}
 
+\section{Recovery}
+\subsection{Logging in Soup}
+
+\chapter{Snapshotting}
 \chapter{Results}
 \chapter{Discussion}
 
