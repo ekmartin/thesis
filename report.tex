@@ -1,4 +1,4 @@
-\documentclass{report}
+\documentclass[b5paper,twoside]{report}
 
 \usepackage[utf8]{inputenc}
 \usepackage{listings}
@@ -78,14 +78,49 @@ the graph.
 The query graph includes at least one materialized node per pre-defined query,
 located at the bottom of the graph as leaf nodes. This means that reading from
 the system is a matter of finding the relevant leaf node, and retrieving data
-from the node's materialized storage.
+from the node's materialized storage. This is one of the elements that make Soup
+resemble more of a key-vaule store than a traditional RDBMS. Even though Soup
+supports advanced SQL queries, both mutations and retrievals are done with a
+key, which then maps to a corresponding value.
 
-% TODO: something about pre-computed queries and soup being a key-value store
-% TODO: write about how soup uses multi-query optimization to find shared
-% subexpressions among queries
+On an elementary level one could see Soup creating a separate graph for
+each query, similar to query graphs in traditional database systems.
+
+Soup could have made a separate graph for each query, but that would have been
+quite inefficient. For one it would have lead to Soup materializing a lot of
+duplicate data for intermediary materialized nodes, and base table writes would
+have had to be propagated to more nodes than necessary. Migrations would also
+have taken considerably longer time, as adding queries would mean constructing a
+completely new query graph. Instead Soup uses multi-query optimization
+techniques to create common sub-graphs of nodes that can be used in multiple
+queries.
+
 % TODO: write about data-flow operators
 
+\subsection{Materialization}
+
 \subsection{Migrations}
+Relational databases require developers to pre-define a set of table schemas for
+their application. Changes to these throughout a project's lifecycle are often
+inevitable, however the process of performing migrations in a live
+system without downtime is usually far from trivial \cite{stripe}. This is one
+of the core issues Soup sets out to solve, by providing a database system that
+lets developers change both the base table schemas and the pre-defined queries
+at any point.
+
+Soup constructs a new graph for added queries. This is done by finding overlaps
+with the existing query graph nodes, to avoid duplicate materializations and
+to reduce the amount of work done by each migration. Soup marks nodes as
+partially materialized when possible, which lets the system start processing
+requests for the newly defined query right away, by only fetching each key from
+ancestor nodes when necessary. For fully materialized nodes, Soup will replay
+all relevant base table writes from the closest materialized node. This
+delays the point where Soup can start processing requests, but has the advantage
+of not delaying subsequent requests to retrieve materializated keys later on.
+
+Modifications to base table schemas are done in-place, by having Soup's base
+nodes internally include the full history of columns for that specific table.
+% TODO: default values
 
 \subsection{Transactions}
 
