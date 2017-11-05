@@ -159,6 +159,26 @@ interferred with the data, which lets the system notify the client by aborting
 the ongoing transaction.
 
 \section{Rust}
+Rust is an open-source systems programming language that guarantees memory
+safety while maintaining a minimal runtime. Rust is sponsored by Mozilla, where
+it is used to develop Servo - a completely new browser engine.
+
+When choosing a language, developers are often forced to compromise between
+higher level abstractions and performance. Large and latency sensitivy projects
+like databases often opt for the latter, through low-level languages like C,
+which avoids expensive runtime safety checks. Rust removes this dilemma
+altogether by providing developers with both the fine-tuned control and
+performance they are used to in low level languages, while offering abstractions
+developers might be familiar with from interepretted languages.
+
+One of Rust's key features is providing compile time safety both in terms of
+types and memory. The latter is done through an ownership model which lets
+developers program mostly without thinking about memory allocation and
+deallocation, without the lowered performance of using something like a garbage
+collector. Each variable in Rust is assigned one and only one owner, and the
+variable is deallocated - or dropped - when that owner goes out of scope.
+
+% TODO: example
 
 \section{Recovery}
 \subsection{Logging in Soup}
