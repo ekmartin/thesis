@@ -35,7 +35,7 @@ concurrent users, or by taking too long to return results for more expensive
 aggregation queries.
 
 This is often worked around by building up intricate cache hierarchies
-\cite{facebook}, similar to the multi-level cache hierarchy
+\cite{memcached}, similar to the multi-level cache hierarchy
 readers might be accustomed to seeing in their processors. This solves both
 performance problems: concurrent readers can
 access materialized data from the upper levels of the cache hierarchy, achieving
@@ -95,9 +95,26 @@ completely new query graph. Instead Soup uses multi-query optimization
 techniques to create common sub-graphs of nodes that can be used in multiple
 queries.
 
-% TODO: write about data-flow operators
-
 \subsection{Materialization}
+Similar to in traditional relational databases, writes are inserted into the
+table directly - a base node in Soup. However, whereas this marks the
+end of the operation for an RDBMS, Soup will continue by propagating the write
+throughout the query graph, storing the result at materialized nodes.
+
+The insertions are handled with a group-commit protocol, where records are
+batched up and finally inserted into a durable log before being propagated to
+the base node.
+
+Soup primarily materializes leaf nodes in the graph, to enable fast read
+queries. However, in some cases intermediary operators might also choose to
+materialize the records they receive before they forward them through to their
+child nodes. This is especially the case for stateful operators, such as
+extremum queries, as these need to incrementally update their result - instead
+of having to go through and re-calculate the state on every new record.
+
+Nodes can also be partially materialized, which lets each node choose which rows
+to keep in their internal state. This resembles a regular caching system, where
+keys can be evicted after a period of inactivity.
 
 \subsection{Migrations}
 Relational databases require developers to pre-define a set of table schemas for
@@ -123,6 +140,23 @@ nodes internally include the full history of columns for that specific table.
 % TODO: default values
 
 \subsection{Transactions}
+An increasing amount of real-world database system users have found relaxed
+consistency guarantees to be sufficient in the last few years, as it greatly
+simplifies the problem of replicating large amounts of data across data centers
+with high performance \cite{existential}. There are nonetheless without doubt
+a wide variety of usecases for transactions, where the eventual consistency that
+Soup offers is insufficient. To cater to these types of applications, Soup
+allows developers to opt-in for transaction support, by defining their base
+nodes as transactional.
+
+Soup's transaction support is carefully designed to avoid slowing down
+non-transactional workloads. Using optimistic concurrency control, Soup returns
+timestamped tokens for reads, which can later be used to verify the validity of
+the data that was read. Writes can only be performed at the end of a
+transaction, when clients request their transactions to be committed. The
+timestamp part of the token helps Soup validate if concurrent clients
+interferred with the data, which lets the system notify the client by aborting
+the ongoing transaction.
 
 \section{Rust}
 
