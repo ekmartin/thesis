@@ -163,6 +163,12 @@ Rust is an open-source systems programming language that guarantees memory
 safety while maintaining a minimal runtime. Rust is sponsored by Mozilla, where
 it is used to develop Servo - a completely new browser engine.
 
+\begin{lstlisting}[caption="Hello World in Rust", numbers=none]
+fn main() {
+  println!("Hello World!");
+}
+\end{lstlisting}
+
 When choosing a language, developers are often forced to compromise between
 higher level abstractions and performance. Large and latency sensitivy projects
 like databases often opt for the latter, through low-level languages like C,
@@ -178,10 +184,42 @@ deallocation, without the lowered performance of using something like a garbage
 collector. Each variable in Rust is assigned one and only one owner, and the
 variable is deallocated - or dropped - when that owner goes out of scope.
 
-% TODO: example
-
 \section{Recovery}
+At the core of most database systems you will find a log manager, which
+maintains a sequence of log records on disk. Logging is essential in maintaining
+fault tolerancy and durability, and is used for a variety of issues: ensuring
+the durability of committed data, recovering from failures, and rolling back
+aborted transactions.
+
+Even to this day one of the most popular algorithms for recovery is ARIES
+\cite{aries} (Algorithm for Recovery and Isolation Exploitation Semantic), which
+uses a write-ahead log to make sure that a persistent record of changes is
+maintained before the actual changes themselves. Upon recovery ARIES makes sure
+that all actions from the log prior to a crash are repeated (\textit{REDO}),
+then reverts the operations belonging to failing transactions (\textit{UNDO}).
+The former makes sure that durability is respected, while the latter maintains
+atomicity.
+
+Whereas the logging protocol used for recovery varies from implementation to
+implementation, the principle behind a write-ahead log remains the same. By
+maintaining a log of actions \textit{before} the changes themselves are made
+durable, we make sure that we can recover from a potential crash. For
+transactional systems we also maintain enough data to be able to achieve
+atomicity for transactions.
+
 \subsection{Logging in Soup}
+Soup only logs entries from committed transactions, greatly simplifying the
+recovery protocol. The log is written prior to entries being forwarded
+through the query graph, which makes sure that all changes are persisted to disk
+before being made accessible to the client. Soup does however make use of a
+\textit{group-commit scheme} \cite{main-memory}, buffering up a series of
+packets before finally incurring an I/O write to persist the group as one unit.
+
+At the time of writing, Soup defaults to gathering up 256 operations before
+flushing the group to disk, drastically increasing the throughput of the system.
+Not only does this reduce the amount of I/O operations per request, merging the
+data from multiple requests into a single group also means less packets to feed
+through the Soup query graph.
 
 \chapter{Snapshotting}
 \chapter{Results}
