@@ -158,7 +158,7 @@ interferred with the data, which lets the system notify the client by aborting
 the ongoing transaction.
 
 \section{Rust}
-Rust is an open-source systems programming language that guarantees memory
+Rust \cite{rust} is an open-source systems programming language that guarantees memory
 safety while maintaining a minimal runtime. Rust is sponsored by Mozilla, where
 it is used to develop Servo - a completely new browser engine.
 
@@ -183,7 +183,8 @@ deallocation, without the lowered performance of using something like a garbage
 collector. Each variable in Rust is assigned one and only one owner, and the
 variable is deallocated - or dropped - when that owner goes out of scope.
 
-\section{Recovery}
+\chapter{Recovery}
+\section{Traditional Recovery}
 At the core of most database systems you will find a log manager, which
 maintains a sequence of log records on disk. Logging is essential in maintaining
 fault tolerancy and durability, and is used for a variety of issues: ensuring
@@ -206,7 +207,7 @@ durable, we make sure that we can recover from a potential crash. For
 transactional systems we also maintain enough data to be able to achieve
 atomicity for transactions.
 
-\subsection{Logging in Soup}
+\section{Logging in Soup}
 Soup only logs entries from committed transactions, greatly simplifying the
 recovery protocol. The log is written prior to entries being forwarded
 through the query graph, which makes sure that all changes are persisted to disk
@@ -261,7 +262,6 @@ BufReader::new(file)
 \end{lstlisting}
 \end{figure}
 
-\chapter{Snapshotting}
 \section{Recovery in Main-Memory Databases}
 Accessing and writing to durable storage is consistently a bottleneck in
 database storage systems. Even though database systems that rely on non-volatile
@@ -300,6 +300,78 @@ an application gains more data, as all log entries would have to be processed to
 reach the system's previous state. This is unfeasible, and systems like VoltDB
 opt for checkpointing as a way of minimizing the size of the log that has to be
 replayed during recovery.
+
+\section{Snapshotting}
+Snapshotting a running Soup instance's entire state is far from trivial however.
+Main memory systems like VoltDB leverage checkpointing by persisting the
+transactional state of commmitted transactions, using log sequence numbers to be
+able to track which updates have been reflected on disk. In Soup, state is
+materialized at a variety of nodes throughout the query graph, and updates have no
+timestamps or sequence numbers attached to them. Updates also propagate through
+the graph asynchronously, and a specific update is likely to reach different
+points in the graph at separate times. Taking a global snapshot of the entire
+graph would thus mean capturing nodes at different logical points, as a write
+might be in the process of propagating throughout the graph.
+
+The nature of Soup's update propagation through a query graph resembles the
+communication done in a distributed system, where access to a common clock is
+rare. Being able to observe the global state in a distributed system is an
+immensely useful property, and is crucial to resolving problems such as deadlock
+detection.
+
+Chandy and Lamport first introduced the problem of a distributed snapshot in
+"Distributed Snapshots: Determining Global States of Distributed Systems"
+\cite{chandy-lamport}, which has since been the inspiration for a wide variety
+of work within the field. Chandy and Lamport presented a solution to be used in
+a distributed system with preserved message ordering, using first-in first-out
+channels. They resolve two main issues: deciding when to take a snapshot, and
+select which messages should be a part of said snapshot.
+
+The key insight in \cite{chandy-lamport} is to introduce a marker message, that
+can be used as a separator between messages that should be included in a
+snapshot, and messages that should not. Processes that receive a snapshot marker
+should immediately take a snapshot of all messages received prior to the marker,
+and forward the resulting state to a process capable of assembling all local
+snapshots to a global view of the system. Because of the channels' FIFO
+property, snapshots will not include messages that arrive after a marker at a
+node. This results in a requirement of \textit{O(e)} messages to initiate a
+snapshot, where \textit{e} signifies the amount of edges in the graph. Since
+these messages can be sent out in parallel, the time to complete a snapshot is
+\textit{O(d)}, where \textit{d} is the diameter of the graph.
+
+Lai and Yang \cite{lai-yang} later extend this scheme with support for non-FIFO
+channels, and obleviate the need for explicit control messages by piggy-backing
+the required information onto existing messages.
+
+\subsection{Snapshotting in Soup}
+Soup's current recovery technique involves going through all log entries
+available, and processing each individual entry as if it was a new write to the
+system. No matter the recovery performance, the size of the log will regardless
+continue to grow with the lifetime of each Soup application. By introducing
+snapshotting of materialized nodes, Soup would be able to discard a significant
+part of the log at each snapshot, avoiding a continual growth in log size.
+
+Soup's query graph communicates over FIFO channels, which makes it possible to
+rely on Chandy-Lamport's marker technique to signify which updates should be
+considered a part of the snapshot. Implemented naively this would lead to the
+entire graph snapshotting at the same time however, which would undoubtely cause
+a slow down in throughput. Thus we can say that we want snapshots to happen at
+\textit{logically} the same time, but not at the same \textit{physical} instant.
+
+This adds a layer of complexity. Soup's materialized state is kept in a
+lock-free hash map, and there is no log kept at each separate node. This means
+that a node's internal state has to be cloned when a snapshot request is
+received, and that no additional updates can be processed until that has
+happened. Doing so would however mean either snapshotting at roughly the same
+physical time across the graph, or blocking additional updates for a period of
+time. Both would without doubt increase the system's throughput.
+
+The solution this thesis proposes is to maintain a buffered log of writes that
+are received after the snapshot marker, letting the system re-create the state
+at the point the snapshot marker was received. If the system's state at that
+point is denoted as $ S_n $, and $ L_{n..m} $ signifies the updates received
+from \textit{n} to \textit{m}, $ S_n $ can be re-created through
+$ S_m - L_{n..m} $.
 
 \chapter{Results}
 \chapter{Discussion}
