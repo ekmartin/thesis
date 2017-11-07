@@ -39,6 +39,8 @@ Send a marker when a snapshot should be taken. Node takes a snapshot, then
 forwards the marker. In the paper nodes also send their snapshots to each other,
 but this wouldn't necessarily be a requirement in Soup.
 
+### !!! Read the fast-checkpoint-sigmod16 paper
+
 ## Snapshot Papers
 * Lightweight Asynchronous Snapshots for Distributed Dataflows
 * K. M. Chandy and L. Lamport. Distributed snapshots: determining global states of

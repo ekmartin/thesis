@@ -1,4 +1,4 @@
-\documentclass[b5paper,twoside]{report}
+\documentclass[b5paper]{report}
 
 \usepackage[utf8]{inputenc}
 \usepackage{listings}
@@ -35,16 +35,15 @@ concurrent users, or by taking too long to return results for more expensive
 aggregation queries.
 
 This is often worked around by building up intricate cache hierarchies
-\cite{memcached}, similar to the multi-level cache hierarchy
-readers might be accustomed to seeing in their processors. This solves both
-performance problems: concurrent readers can
-access materialized data from the upper levels of the cache hierarchy, achieving
-low latency and high throughput even when faced with large amounts of clients.
-Expensive queries then only need to be performed once, as long as the result is
-invalidated when the underlying data changes. This touches upon the main problem
-with these cache hierarchies: invalidation. Write operations still need to change
-the underlying storage layer, but are now also responsible for clearing out or
-updating the materialized cache levels.
+\cite{memcached}, similar to the multi-level cache hierarchy readers might be
+accustomed to seeing in their processors. This solves both performance problems:
+concurrent readers can access materialized data from the upper levels of the
+cache hierarchy, achieving low latency and high throughput even when faced with
+large amounts of clients. Expensive queries then only need to be performed once,
+as long as the result is invalidated when the underlying data changes. This
+touches upon the main problem with these cache hierarchies: invalidation. Write
+operations still need to change the underlying storage layer, but are now also
+responsible for clearing out or updating the materialized cache levels.
 
 This adds an extra layer of complexity, and is a trade-off accepted by almost
 every modern day developer that faces more than a trivial amount of load to
@@ -163,7 +162,7 @@ Rust is an open-source systems programming language that guarantees memory
 safety while maintaining a minimal runtime. Rust is sponsored by Mozilla, where
 it is used to develop Servo - a completely new browser engine.
 
-\begin{lstlisting}[caption="Hello World in Rust", numbers=none]
+\begin{lstlisting}[caption="Hello World in Rust"]
 fn main() {
   println!("Hello World!");
 }
@@ -219,9 +218,89 @@ At the time of writing, Soup defaults to gathering up 256 operations before
 flushing the group to disk, drastically increasing the throughput of the system.
 Not only does this reduce the amount of I/O operations per request, merging the
 data from multiple requests into a single group also means less packets to feed
-through the Soup query graph.
+through the Soup query graph. The log entries themselves are JSON \cite{json}
+serialized arrays of Soup's data types.
+
+Recovery in Soup is then a matter of replaying the writes from the persisted log
+on start-up, feeding them into the query graph's base nodes as if they were
+standard mutations. Similar to the group-commit protocol used for logging, the
+log entries are batched up into larger groups on recovery, to reduce the amounts
+of packets flowing through the Soup query graph.
+
+\begin{figure}
+\begin{lstlisting}[caption="Recovering from the Soup log"]
+BufReader::new(file)
+    .lines()
+    .filter_map(|line| {
+        let line = line.unwrap();
+        let entries: Result<Vec<Records>, _> = serde_json::from_str(&line);
+        entries.ok()
+    })
+    .flat_map(|r| r)
+    // Merge packets into batches of RECOVERY_BATCH_SIZE:
+    .chunks(RECOVERY_BATCH_SIZE)
+    .into_iter()
+    .map(|chunk| chunk.fold(Records::default(), |mut acc, ref mut data| {
+        acc.append(data);
+        acc
+    }))
+    // Then create Packet objects from the data:
+    .map(|data| {
+        let link = Link::new(local_addr, local_addr);
+        if is_transactional {
+            let (ts, prevs) = checktable.recover(global_addr).unwrap();
+            Packet::Transaction {
+                link, data, tracer: None,
+                state: TransactionState::Committed(ts, global_addr, prevs)
+            }
+        } else {
+            Packet::Message { link, data, tracer: None }
+        }
+    })
+    .for_each(|packet| self.handle(box packet));
+\end{lstlisting}
+\end{figure}
 
 \chapter{Snapshotting}
+\section{Recovery in Main-Memory Databases}
+Accessing and writing to durable storage is consistently a bottleneck in
+database storage systems. Even though database systems that rely on non-volatile
+storage for durability can have large amounts of data available in RAM, writes
+still have to be persisted to disk ahead of being made available to clients.
+With the rise of hardware that is capable of storing entire applications'
+datasets in their main memory, this is often seen as inefficient, and has lead
+to an increase in so called main memory database systems.
+
+As these main memory database systems rely on fast volatile storage as their
+main data store, traditional techniques for maintaining ACID principles seem
+unappealing. Almost all storage systems want to maintain some measure of
+durability nonetheless however, which means that state needs to persisted to
+durable storage at some point.
+
+Taking periodic checkpoints of the entire system's state is one way of avoiding
+total data loss in the event of a crash. Checkpointing used alone only achieves
+partial durability however, as it is unfeasible to take a checkpoint after every
+operation. Because of this some main memory systems also rely on so-called
+K-safety, where data is replicated to K+1 replicas \cite{memory-checkpoint},
+ensuring that the system could survive up to K failing nodes and still maintain
+full durability. K-safety is because of this naturally sensitive to total
+failures, where for example entire data centres fail.
+
+A third alternative is maintaining a log of actions, which in VoltDB is referred
+to as command logging \cite{voltdb-recovery}. Whereas a fine-grained system like
+ARIES would log each individual modification, command logging would stick to
+only persisting the actual SQL query, which could then later be re-executed.
+This results in a significantly lower volume being logged, and a simpler
+recovery process after failures. This is akin to the recovery system currently
+being used in Soup, where each write request is logged with its corresponding
+data.
+
+With only a coarse-grained command log recovery times would steadily increase as
+an application gains more data, as all log entries would have to be processed to
+reach the system's previous state. This is unfeasible, and systems like VoltDB
+opt for checkpointing as a way of minimizing the size of the log that has to be
+replayed during recovery.
+
 \chapter{Results}
 \chapter{Discussion}
 
