@@ -25,6 +25,10 @@
 \pagebreak
 
 \chapter{Introduction}
+% TODO: explain what soup is, what it's trying to achieve.
+% say how recovery is done in soup, and how snapshotting would speed it up.
+% why is snapshotting in soup hard, and how does it correspond to distributed
+% snapshotting.
 
 \chapter{Background}
 \section{Soup}
@@ -40,19 +44,18 @@ accustomed to seeing in their processors. This solves both performance problems:
 concurrent readers can access materialized data from the upper levels of the
 cache hierarchy, achieving low latency and high throughput even when faced with
 large amounts of clients. Expensive queries then only need to be performed once,
-as long as the result is invalidated when the underlying data changes. This
-touches upon the main problem with these cache hierarchies: invalidation. Write
-operations still need to change the underlying storage layer, but are now also
-responsible for clearing out or updating the materialized cache levels.
+as long as the result is invalidated when the underlying data changes. Write
+operations still need to change the underlying storage layer however, but are
+now also responsible for clearing out or updating the materialized cache levels.
 
 This adds an extra layer of complexity, and is a trade-off accepted by almost
 every modern day developer that faces more than a trivial amount of load to
 their storage system.
 
 Soup sets out to solve this by providing a single high performant system,
-removing the need for manual materialization through cache hierarchies. The
-current prototype scales to millions of writes and reads per second
-\cite{soup} - both on a single machine and in a distributed fashion.
+removing the need for manual materialization altogether. The current prototype
+scales to millions of writes and reads per second \cite{soup}, and works both on
+a single machine and in a distributed setting.
 
 Soup does this by materializing data automatically in a data-flow
 graph, building on existing streaming data-flow research \cite{naiad, dataflow}
@@ -82,34 +85,32 @@ resemble more of a key-vaule store than a traditional RDBMS. Even though Soup
 supports advanced SQL queries, both mutations and retrievals are done with a
 key, which then maps to a corresponding value.
 
-On an elementary level one could see Soup creating a separate graph for
-each query, similar to query graphs in traditional database systems.
-
-Soup could have made a separate graph for each query, but that would have been
-quite inefficient. For one it would have lead to Soup materializing a lot of
-duplicate data for intermediary materialized nodes, and base table writes would
-have had to be propagated to more nodes than necessary. Migrations would also
-have taken considerably longer time, as adding queries would mean constructing a
-completely new query graph. Instead Soup uses multi-query optimization
-techniques to create common sub-graphs of nodes that can be used in multiple
-queries.
+On an elementary level one could see Soup creating a separate graph for each
+query, similar to query graphs in traditional database systems, but that would
+have been quite inefficient. For one it would have lead to Soup materializing a
+lot of duplicate data for intermediary materialized nodes, and base table writes
+would have had to be propagated to more nodes than necessary. Migrations would
+also have taken considerably longer time, as adding queries would mean
+constructing a completely new query graph. Instead Soup uses multi-query
+optimization techniques to create common sub-graphs of nodes that can be used in
+multiple queries.
 
 \subsection{Materialization}
 Similar to in traditional relational databases, writes are inserted into the
-table directly - a base node in Soup. However, whereas this marks the
-end of the operation for an RDBMS, Soup will continue by propagating the write
-throughout the query graph, storing the result at materialized nodes.
+table directly - a base node in Soup. Whereas this marks the end of the
+operation for an RDBMS, Soup will continue by propagating the write throughout
+the query graph, storing the result at materialized nodes.
 
 The insertions are handled with a group-commit protocol, where records are
 batched up and finally inserted into a durable log before being propagated to
 the base node.
 
 Soup primarily materializes leaf nodes in the graph, to enable fast read
-queries. However, in some cases intermediary operators might also choose to
-materialize the records they receive before they forward them through to their
-child nodes. This is especially the case for stateful operators, such as
-extremum queries, as these need to incrementally update their result - instead
-of having to go through and re-calculate the state on every new record.
+queries. In some cases intermediary operators might also choose to materialize
+the records they receive before they forward them through to their child nodes.
+This is especially the case for stateful operators, such as extremum queries, as
+these need to incrementally update their result - instead of having to go
+through and re-calculate the state on every new record.
 
 Nodes can also be partially materialized, which lets each node choose which rows
 to keep in their internal state. This resembles a regular caching system, where
@@ -170,10 +171,10 @@ fn main() {
 
 When choosing a language, developers are often forced to compromise between
 higher level abstractions and performance. Large and latency sensitivy projects
-like databases often opt for the latter, through low-level languages like C,
-which avoids expensive runtime safety checks. Rust removes this dilemma
+like databases often opt for the latter through low-level languages like C,
+which avoid expensive runtime safety checks. Rust removes this dilemma
 altogether by providing developers with both the fine-tuned control and
-performance they are used to in low level languages, while offering abstractions
+performance they are used to in low-level languages, while offering abstractions
 developers might be familiar with from interepretted languages.
 
 One of Rust's key features is providing compile time safety both in terms of
@@ -295,14 +296,14 @@ recovery process after failures. This is akin to the recovery system currently
 being used in Soup, where each write request is logged with its corresponding
 data.
 
-With only a coarse-grained command log recovery times would steadily increase as
+With only a coarse-grained command log recovery, times would steadily increase as
 an application gains more data, as all log entries would have to be processed to
 reach the system's previous state. This is unfeasible, and systems like VoltDB
 opt for checkpointing as a way of minimizing the size of the log that has to be
 replayed during recovery.
 
 \section{Snapshotting}
-Snapshotting a running Soup instance's entire state is far from trivial however.
+Snapshotting a running Soup instance's entire state is far from trivial.
 Main memory systems like VoltDB leverage checkpointing by persisting the
 transactional state of commmitted transactions, using log sequence numbers to be
 able to track which updates have been reflected on disk. In Soup, state is
@@ -324,8 +325,8 @@ Chandy and Lamport first introduced the problem of a distributed snapshot in
 \cite{chandy-lamport}, which has since been the inspiration for a wide variety
 of work within the field. Chandy and Lamport presented a solution to be used in
 a distributed system with preserved message ordering, using first-in first-out
-channels. They resolve two main issues: deciding when to take a snapshot, and
-select which messages should be a part of said snapshot.
+channels. They resolved two main issues: deciding when to take a snapshot, and
+selecting which messages should be a part of said snapshot.
 
 The key insight in \cite{chandy-lamport} is to introduce a marker message, that
 can be used as a separator between messages that should be included in a
@@ -364,14 +365,28 @@ that a node's internal state has to be cloned when a snapshot request is
 received, and that no additional updates can be processed until that has
 happened. Doing so would however mean either snapshotting at roughly the same
 physical time across the graph, or blocking additional updates for a period of
-time. Both would without doubt increase the system's throughput.
+time.
 
 The solution this thesis proposes is to maintain a buffered log of writes that
 are received after the snapshot marker, letting the system re-create the state
 at the point the snapshot marker was received. If the system's state at that
 point is denoted as $ S_n $, and $ L_{n..m} $ signifies the updates received
 from \textit{n} to \textit{m}, $ S_n $ can be re-created through
-$ S_m - L_{n..m} $.
+$ S_m - L_{n..m} $. This lets individual nodes delay initializing the snapshot
+process, preventing a global performance hit to the system.
+
+When a node in the graph eventually snapshots its state, the base node should be
+notified of its completion. The snapshots are already persisted to disk, so
+including the actual data in these messages are unneccessary. They should on the
+other hand should include an identifier to the current snapshot request, so that
+the system eventually knows when an entire graph has performed the same
+snapshot. At that point the identifier of the snapshot can be persisted to disk,
+while simultaneously discarding the log prior to the snapshot.
+
+Recovery is then a matter of first loading each materialized node's state from
+their local snapshot, then replaying the rest of the log entries available.
+
+% TODO: summarize procedure
 
 \chapter{Results}
 \chapter{Discussion}
