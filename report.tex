@@ -10,6 +10,7 @@
 \usepackage[chapter]{minted}
 
 \graphicspath{{images/}}
+\svgpath{{/Users/ek/Code/semester/images/}}
 \usetikzlibrary{positioning}
 \usetikzlibrary{shapes,decorations,shadows}
 
@@ -241,7 +242,7 @@ timestamp part of the token helps Soup validate if concurrent clients
 interferred with the data, which lets the system notify the client by aborting
 the ongoing transaction.
 
-\subsection{Example}
+\subsection{Example} \label{example}
 Having presented the different parts of the Soup system, lets look at how using
 Soup currently works. The example in listing \ref{lst:soup-example} builds up a query
 graph from scratch, then performs a few simple writes and reads to the running
@@ -253,8 +254,6 @@ use of two types of queries: internal and external. The former can be seen as a
 helper for the latter, where only external queries are exposed to the user. The
 output query in the example counts the number of votes for a specific article,
 through a \texttt{JOIN} between the two tables.
-
-% TODO: figure of Article and Vote schemas here?
 
 \begin{listing}[H]
   \vspace*{-1.1in}
@@ -310,37 +309,7 @@ println!("Vote Count: {:?}", vote_count.lookup(&aid.into(), true))
   }
 \end{listing}
 
-\section{Rust}
-Rust \cite{rust} is an open-source systems programming language that guarantees memory
-safety while maintaining a minimal runtime. Rust is sponsored by Mozilla, where
-it is used to develop Servo - a completely new browser engine.
-
-\begin{listing}
-  \begin{minted}[frame=single]{rust}
-fn main() {
-  println!("Hello World!");
-}
-  \end{minted}
-  \caption{Hello World in Rust}
-\end{listing}
-
-When choosing a language, developers are often forced to compromise between
-higher level abstractions and performance. Large and latency sensitivy projects
-like databases often opt for the latter through low-level languages like C,
-which avoid expensive runtime safety checks. Rust removes this dilemma
-altogether by providing developers with both the fine-tuned control and
-performance they are used to in low-level languages, while offering abstractions
-developers might be familiar with from interepretted languages.
-
-One of Rust's key features is providing compile time safety both in terms of
-types and memory. The latter is done through an ownership model which lets
-developers program mostly without thinking about memory allocation and
-deallocation, without the lowered performance of using something like a garbage
-collector. Each variable in Rust is assigned one and only one owner, and the
-variable is deallocated - or dropped - when that owner goes out of scope.
-
-\chapter{Recovery}
-\section{Traditional Recovery}
+\section{Recovery} \label{aries}
 At the core of most database systems you will find a log manager, which
 maintains a sequence of log records on disk. Logging is essential in maintaining
 fault tolerancy and durability, and is used for a variety of issues: ensuring
@@ -363,70 +332,14 @@ durable, we make sure that we can recover from a potential crash. For
 transactional systems we also maintain enough data to be able to achieve
 atomicity for transactions.
 
-\section{Logging in Soup}
-Soup only logs entries from committed transactions, greatly simplifying the
-recovery protocol. The log is written prior to entries being forwarded
-through the query graph, which makes sure that all changes are persisted to disk
-before being made accessible to the client. Soup does however make use of a
-\textit{group-commit scheme} \cite{main-memory}, buffering up a series of
-packets before finally incurring an I/O write to persist the group as one unit.
-
-At the time of writing, Soup defaults to gathering up 256 operations before
-flushing the group to disk, drastically increasing the throughput of the system.
-Not only does this reduce the amount of I/O operations per request, merging the
-data from multiple requests into a single group also means less packets to feed
-through the Soup query graph. The log entries themselves are JSON \cite{json}
-serialized arrays of Soup's data types.
-
-Recovery in Soup is then a matter of replaying the writes from the persisted log
-on start-up, feeding them into the query graph's base nodes as if they were
-standard mutations. Similar to the group-commit protocol used for logging, the
-log entries are batched up into larger groups on recovery, to reduce the amounts
-of packets flowing through the Soup query graph.
-
-\begin{listing}
-  \begin{minted}[frame=lines, linenos]{rust}
-BufReader::new(file)
-    .lines()
-    .filter_map(|line| {
-        let line = line.unwrap();
-        let entries: Result<Vec<Records>, _> = serde_json::from_str(&line);
-        entries.ok()
-    })
-    .flat_map(|r| r)
-    // Merge packets into batches of RECOVERY_BATCH_SIZE:
-    .chunks(RECOVERY_BATCH_SIZE)
-    .into_iter()
-    .map(|chunk| chunk.fold(Records::default(), |mut acc, ref mut data| {
-        acc.append(data);
-        acc
-    }))
-    // Then create Packet objects from the data:
-    .map(|data| {
-        let link = Link::new(local_addr, local_addr);
-        if is_transactional {
-            let (ts, prevs) = checktable.recover(global_addr).unwrap();
-            Packet::Transaction {
-                link, data, tracer: None,
-                state: TransactionState::Committed(ts, global_addr, prevs)
-            }
-        } else {
-            Packet::Message { link, data, tracer: None }
-        }
-    })
-    .for_each(|packet| self.handle(box packet));
-  \end{minted}
-  \caption{Recovering from the Soup log}
-\end{listing}
-
 \section{Recovery in Main-Memory Databases}
 Accessing and writing to durable storage is consistently a bottleneck in
 database storage systems. Even though database systems that rely on non-volatile
 storage for durability can have large amounts of data available in RAM, writes
-still have to be persisted to disk ahead of being made available to clients.
-With the rise of hardware that is capable of storing entire applications'
-datasets in their main memory, this is often seen as inefficient, and has lead
-to an increase in so called main memory database systems.
+still have to be committed to persistent storage ahead of being made available
+to clients. With the rise of hardware that is capable of storing entire
+applications' datasets in their main memory, this is often seen as inefficient,
+and has lead to an increase in so called main memory database systems.
 
 As these main memory database systems rely on fast volatile storage as their
 main data store, traditional techniques for maintaining ACID principles seem
@@ -438,7 +351,7 @@ Taking periodic checkpoints of the entire system's state is one way of avoiding
 total data loss in the event of a crash. Checkpointing used alone only achieves
 partial durability however, as it is unfeasible to take a checkpoint after every
 operation. Because of this some main memory systems also rely on so-called
-K-safety, where data is replicated to K+1 replicas \cite{memory-checkpoint},
+K-safety, where data is replicated to K+1 replicas \cite{early-voltdb},
 ensuring that the system could survive up to K failing nodes and still maintain
 full durability. K-safety is because of this naturally sensitive to total
 failures, where for example entire data centres fail.
@@ -454,9 +367,95 @@ data.
 
 With only a coarse-grained command log, recovery times would steadily increase
 as an application gains more data, as all log entries would have to be processed
-during recovery to reach the system's previous state. This is unfeasible, and
+during recovery to reach the system's previous state. This is infeasible, and
 systems like VoltDB opt for checkpointing as a way of minimizing the size of the
-log that has to be replayed during recovery.
+log that has to be replayed during recovery. VoltDB is not unique here though, and
+a plethora of different checkpointing solutions exists in today's selection of
+in-memory databases. As usual, there are trade-offs to be chosen between here
+as well, however most systems seem to agree that performing the checkpoints in
+an asynchronous manner, without blocking the system, is critical. This helps
+achieve two key properties, as stated by \cite{memory-checkpoint}:
+
+\begin{enumerate}
+  \item Checkpointing should not significantly slow down the system's
+    transactional throughput.
+  \item Checkpointing should not introduce high amounts of latency to the
+    system's regular processing.
+\end{enumerate}
+
+\chapter{Methodology}
+
+\section{Logging in Soup}
+Soup only logs entries from committed transactions, greatly simplifying the
+recovery protocol. The log is written prior to entries being forwarded
+through the query graph, which makes sure that all changes are persisted to disk
+before being made accessible to the client. Soup does however make use of a
+\textit{group-commit scheme} \cite{main-memory}, buffering up a series of
+packets before finally incurring an I/O write to persist the group as one unit.
+
+At the time of writing, Soup defaults to gathering up 256 operations before
+flushing the group to disk, drastically increasing the throughput of the system.
+Not only does this reduce the amount of I/O operations per request, merging the
+data from multiple requests into a single unit also means less packets to feed
+through the Soup query graph. The log entries themselves are JSON \cite{json}
+serialized arrays of Soup's data types.
+
+\subsection{Log based recovery}
+While a persisted log of entries existed ahead of writing this thesis, use of
+these logs for recovery purposes was yet to be implemented. While the final goal
+of this project is snapshot based recovery, the first step was nonetheless to
+implement the baseline: replaying the log.
+
+In a traditional relational database management system, log recovery often comes
+in multiple phases. Following a system such as ARIES, as described in section
+\ref{aries}, log recovery is responsible for a wide variety of tasks, such as
+making sure the work of aborted transactions is undone. Compared to this, log
+recovery in Soup is fairly trivial. This comes as a result of the log being
+highly granular, as it only includes the actual operations being done - not the
+differences each operation results in for the database. There is no UNDO or REDO
+either: only committed operations result in log entries being persisted.
+
+Log recovery in Soup is because of this a matter of replaying the writes from
+the persisted logs on start-up, by feeding them into the query graph's base
+nodes as if they were regular updates. Each line in the log corresponds to a
+packet that was once fed through the previously running Soup instance's query
+graph, now serialized using JSON as shown in listing \ref{lst:log-entry}.
+
+\begin{listing}[H]
+  \begin{minted}{json}
+[
+  [{"Positive": [{"Int": 1}, {"Int": 0}]}],
+  [{"Positive": [{"Int": 1}, {"Int": 1}]}],
+  [{"Positive": [{"Int": 1}, {"Int": 2}]}]
+]
+  \end{minted}
+  \caption{
+    An expanded line from one of the log files of the example application from section
+    \ref{example}, corresponding to a single batched update with three records.
+    \label{lst:log-entry}
+  }
+\end{listing}
+
+Log entries are separated by a newline character, where each line in the log
+is valid JSON. This lets the recovery process handle one line at a time in a
+buffered fashion, avoiding the need to read in the entire log in memory. Similar
+to how the packets where created in the first place, individual updates from
+each log entry are batched into chunks, before finally being turned into
+separate packets that are passed on to the rest of the query graph. This speeds
+up recovery performance by avoiding having to process a potentially large
+amount of small log entries.
+
+\begin{figure}
+  % \includesvg[width=\textwidth]{log_chunking}
+  \caption{
+    Log entries are flattened, then chunked into individual packets.
+    \label{log-chunking}
+  }
+\end{figure}
+
+For transactional base nodes, a timestamp also has to be taken for each packet
+created by the recovery packet. This is done through a specific RPC request to the
+checktable.
 
 \section{Snapshotting}
 Snapshotting a running Soup instance's entire state is far from trivial.
@@ -656,6 +655,36 @@ When recovering log entries that existed before the latest snapshot can then be
 ignored. This is possible because the system is certain that each domain has an
 available persisted snapshot at this point, as it would not have told it to
 discard log entries otherwise.
+
+\section{Rust}
+Rust \cite{rust} is an open-source systems programming language that guarantees memory
+safety while maintaining a minimal runtime. Rust is sponsored by Mozilla, where
+it is used to develop Servo - a completely new browser engine.
+
+\begin{listing}
+  \begin{minted}[frame=single]{rust}
+fn main() {
+  println!("Hello World!");
+}
+  \end{minted}
+  \caption{Hello World in Rust}
+\end{listing}
+
+When choosing a language, developers are often forced to compromise between
+higher level abstractions and performance. Large and latency sensitivy projects
+like databases often opt for the latter through low-level languages like C,
+which avoid expensive runtime safety checks. Rust removes this dilemma
+altogether by providing developers with both the fine-tuned control and
+performance they are used to in low-level languages, while offering abstractions
+developers might be familiar with from interepretted languages.
+
+One of Rust's key features is providing compile time safety both in terms of
+types and memory. The latter is done through an ownership model which lets
+developers program mostly without thinking about memory allocation and
+deallocation, without the lowered performance of using something like a garbage
+collector. Each variable in Rust is assigned one and only one owner, and the
+variable is deallocated - or dropped - when that owner goes out of scope.
+
 
 \chapter{Results}
 \chapter{Discussion}

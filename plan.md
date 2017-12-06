@@ -55,16 +55,15 @@ distributed systems.
 
 ## Plan
 * Write a little bit more about Rust, provide an example for move semantics.
+* Positive and negative updates
+* Checktable stuff
 * ACID (cite or describe)
-* Move logging example
 * Formalize snapshot requirement
 * Describe snapshot protocol in soup in pseudo code
   - Clarify that we're building up a snapshot protocol in steps
 * More figures:
   - Group commit protocol
   - Which nodes are materialized (under 3.2 Snapshotting)
-* Examples:
-  - JSON log entry
 
 New stuff to write:
 * Write about the snapshotting implementation (Snapshotting and Logging in Soup).
