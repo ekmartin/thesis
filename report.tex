@@ -10,7 +10,7 @@
 \usepackage[chapter]{minted}
 
 \graphicspath{{images/}}
-\svgpath{{/Users/ek/Code/semester/images/}}
+\svgpath{{images/}}
 \usetikzlibrary{positioning}
 \usetikzlibrary{shapes,decorations,shadows}
 
@@ -445,19 +445,24 @@ separate packets that are passed on to the rest of the query graph. This speeds
 up recovery performance by avoiding having to process a potentially large
 amount of small log entries.
 
-\begin{figure}
-  % \includesvg[width=\textwidth]{log_chunking}
+\begin{figure}[H]
+  \includesvg[width=\textwidth]{log-chunking}
   \caption{
     Log entries are flattened, then chunked into individual packets.
     \label{log-chunking}
   }
 \end{figure}
 
-For transactional base nodes, a timestamp also has to be taken for each packet
+For transactional base nodes, a timestamp has to be taken for each packet
 created by the recovery packet. This is done through a specific RPC request to the
 checktable.
 
 \section{Snapshotting}
+While being able to replay log entries during recovery gives Soup durability, it is far
+from a feasible option for a production level database management system. With
+time, the log files would grow unbounded, resulting in unbearable recovery times
+for any long running Soup system.
+
 Snapshotting a running Soup instance's entire state is far from trivial.
 Main memory systems like VoltDB leverage checkpointing by persisting the
 transactional state of commmitted transactions, using log sequence numbers to be
