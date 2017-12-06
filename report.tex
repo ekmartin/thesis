@@ -1,12 +1,13 @@
 \documentclass[b5paper]{report}
 
-\usepackage{listings}
 \usepackage{color}
 \usepackage{xcolor}
 \usepackage{tikz}
 \usepackage{graphicx}
 \usepackage{svg}
 \usepackage{float}
+\usepackage{url}
+\usepackage[chapter]{minted}
 
 \graphicspath{{images/}}
 \usetikzlibrary{positioning}
@@ -149,6 +150,7 @@ distributed Soup still holds. The latest version of Soup improves this by making
 controllers fault-tolerant, using ZooKeeper \cite{zookeeper} to implement
 consensus.
 
+\subsubsection{Souplets}
 The actual work performed by a Soup system is done in Souplets, which
 correspond to separate instances that communicate in a distributed fashion. Each
 Souplet has a pool of workers, where domains are spread throughout the pool.
@@ -166,6 +168,15 @@ Communication between the Souplet instances and the controller is done over TCP,
 in a layer that is referred to as the coordination plane. This involves
 heartbeat messages, but also packets that are sent when domains are assigned,
 re-assigned and removed to different Souplet instances.
+
+\subsubsection{Backlog}
+Data written through mutators are sent through the data-flow graph, where they
+eventually reach the leaf nodes: the readers. Here data is persisted into an
+in-memory eventually consistent data structure, an \texttt{evmap} \cite{evmap}.
+Getters then expose the records residing here by accessing the readers directly,
+avoiding the need to go through the entire graph to retrieve data.
+\texttt{evmap} implements reading without any locks at all, avoiding degrading
+performance for read-heavy work loads.
 
 \subsection{Materialization}
 Similar to traditional relational databases, writes are inserted into the
@@ -230,16 +241,88 @@ timestamp part of the token helps Soup validate if concurrent clients
 interferred with the data, which lets the system notify the client by aborting
 the ongoing transaction.
 
+\subsection{Example}
+Having presented the different parts of the Soup system, lets look at how using
+Soup currently works. The example in listing \ref{lst:soup-example} builds up a query
+graph from scratch, then performs a few simple writes and reads to the running
+instance.
+
+The example simulates users voting on a series of different articles, and
+includes two base tables: \texttt{Article} and \texttt{Vote}. It highlights the
+use of two types of queries: internal and external. The former can be seen as a
+helper for the latter, where only external queries are exposed to the user. The
+output query in the example counts the number of votes for a specific article,
+through a \texttt{JOIN} between the two tables.
+
+% TODO: figure of Article and Vote schemas here?
+
+\begin{listing}[H]
+  \vspace*{-1.1in}
+  \begin{minted}[frame=lines, linenos]{rust}
+let sql = "
+    # Base tables:
+    CREATE TABLE Article (aid int, title varchar(255), \
+                         url text, PRIMARY KEY(aid));
+    CREATE TABLE Vote (aid int, uid int);
+
+    # Internal query:
+    VoteCount: SELECT Vote.aid, COUNT(uid) AS votes \
+                FROM Vote GROUP BY Vote.aid;
+
+    # External query (note the QUERY keyword):
+    QUERY ArticleWithVoteCount: \
+                SELECT Article.aid, title, url, VoteCount.votes AS votes \
+                FROM Article, VoteCount \
+                WHERE Article.aid = VoteCount.aid AND Article.aid = ?;";
+
+// set up Soup via recipe
+let mut blender = ControllerBuilder::default().build();
+blender.install_recipe(sql.to_owned());
+
+// Build the mutators and the getter:
+let inputs = blender.inputs();
+let outputs = blender.outputs();
+let mut article_mutator = blender.get_mutator(inputs["Article"]).unwrap();
+let mut vote_mutator = blender.get_mutator(inputs["Vote"]).unwrap();
+let mut count_getter = blender
+  .get_getter(outputs["ArticleWithVoteCount"])
+  .unwrap();
+
+// Create a new article:
+let aid = 1;
+let title = "test title";
+let url = "http://pdos.csail.mit.edu";
+article
+    .put(vec![aid.into(), title.into(), url.into()])
+    .unwrap();
+
+// Then create a vote:
+let uid = 1;
+vote.put(vec![aid.into(), uid.into()]).unwrap();
+
+// Finally, retrieve the vote count:
+// (the second argument states that we want to block until the result is ready)
+println!("Vote Count: {:?}", vote_count.lookup(&aid.into(), true))
+  \end{minted}
+  \caption{
+    Writing to and reading from a Soup instance.
+    \label{lst:soup-example}
+  }
+\end{listing}
+
 \section{Rust}
 Rust \cite{rust} is an open-source systems programming language that guarantees memory
 safety while maintaining a minimal runtime. Rust is sponsored by Mozilla, where
 it is used to develop Servo - a completely new browser engine.
 
-\begin{lstlisting}[caption="Hello World in Rust"]
+\begin{listing}
+  \begin{minted}[frame=single]{rust}
 fn main() {
   println!("Hello World!");
 }
-\end{lstlisting}
+  \end{minted}
+  \caption{Hello World in Rust}
+\end{listing}
 
 When choosing a language, developers are often forced to compromise between
 higher level abstractions and performance. Large and latency sensitivy projects
@@ -301,8 +384,8 @@ standard mutations. Similar to the group-commit protocol used for logging, the
 log entries are batched up into larger groups on recovery, to reduce the amounts
 of packets flowing through the Soup query graph.
 
-\begin{figure}
-\begin{lstlisting}[caption="Recovering from the Soup log"]
+\begin{listing}
+  \begin{minted}[frame=lines, linenos]{rust}
 BufReader::new(file)
     .lines()
     .filter_map(|line| {
@@ -332,8 +415,9 @@ BufReader::new(file)
         }
     })
     .for_each(|packet| self.handle(box packet));
-\end{lstlisting}
-\end{figure}
+  \end{minted}
+  \caption{Recovering from the Soup log}
+\end{listing}
 
 \section{Recovery in Main-Memory Databases}
 Accessing and writing to durable storage is consistently a bottleneck in
@@ -431,19 +515,21 @@ packet, which serves as the marker in the Chandy-Lamport algorithm. This marker
 can then be propagated from the controller, to each of its base nodes, and then
 throughout the rest of the graph.
 
-\begin{figure}[H]
-  \begin{lstlisting}[caption="Initating a snapshot from the controller"]
-  def initialize_snapshot(self):
-    self.snapshot_id += 1
-    for node in self.base_nodes:
-      domain = node.domain()
-      domain.send(packet::TakeSnapshot, snapshot_id)
+\begin{listing}[H]
+  \begin{minted}[frame=single]{python}
+def initialize_snapshot(self):
+  self.snapshot_id += 1
+  for node in self.base_nodes:
+    domain = node.domain()
+    domain.send(packet::TakeSnapshot, snapshot_id)
 
-    for node in self.nodes:
-      domain = node.domain()
-      domain.wait_for_acknowledge()
-  \end{lstlisting}
-\end{figure}
+  for node in self.nodes:
+    domain = node.domain()
+    domain.wait_for_acknowledge()
+  \end{minted}
+
+  \caption{Initating a snapshot from the controller}
+\end{listing}
 
 Domains that receive the \texttt{TakeSnapshot} packet proceed to initialize the
 snapshotting process. After persisting a snapshot, the nodes notify the
@@ -453,21 +539,17 @@ id \texttt{snapshot\_id}. Implemented naively, this could involve simply
 serializing each node's state at a domain, then persisting these to disk, while
 blocking updates from the rest of the system:
 
-\begin{figure}[H]
-  \begin{lstlisting}[caption="Naive beginning of a snapshot implementation for domains"]
-  def take_snapshot(self, snapshot_id):
-    for node in self.nodes:
-      if node.is_materialized:
-        state = node.state.binary_serialize()
-        domain = node.domain()
-        index = node.local_index()
-        filename = "snapshot-#{snapshot_id}-#{domain}_#{index}.bin"
-        file = open(filename)
-        file.write(state)
-        notify_controller(node, snapshot_id)
-
-  \end{lstlisting}
-\end{figure}
+\begin{listing}[H]
+  \begin{minted}[frame=single]{python}
+def take_snapshot(self, snapshot_id):
+  for node in self.nodes:
+    if node.is_materialized:
+      state = serialize(node.state)
+      write(state)
+      notify_controller(snapshot_id)
+  \end{minted}
+  \caption{Naive beginning of a snapshot implementation for domains}
+\end{listing}
 
 This would fulfill the properties of Chandy-Lamport's method, as each domain
 stops processing messages until it has completed taking a snapshot. On the other
@@ -479,19 +561,18 @@ the very same moment. An improvement to our initial \texttt{take\_snapshot}
 attempt would then be to serialize the state synchronously, while writing the
 snapshot to disk in a separate thread:
 
-\begin{figure}[H]
-  \begin{lstlisting}[caption="Asynchronous snapshotting"]
-  def take_snapshot(self, snapshot_id):
-    for node in self.nodes:
-      if node.is_materialized:
-        state = node.state.binary_serialize()
-        thread:
-          filename = "snapshot-#{node.domain()}_{node.local_index()}.bin"
-          file = open(filename)
-          file.write(state)
-          notify_controller(snapshot_id)
-  \end{lstlisting}
-\end{figure}
+\begin{listing}[H]
+  \begin{minted}[frame=single]{python}
+def take_snapshot(self, snapshot_id):
+  for node in self.nodes:
+    if node.is_materialized:
+      state = serialize(node.state)
+      thread:
+        write(state)
+        notify_controller(snapshot_id)
+  \end{minted}
+  \caption{Asynchronous snapshotting}
+\end{listing}
 
 \subsubsection{Delayed snapshotting}
 Now the domain only needs to block while performing the state serialization - an
@@ -511,20 +592,21 @@ from \textit{n} to \textit{m}, $ S_n $ can be re-created through
 $ S_m - L_{n..m} $. This lets individual nodes delay initializing the snapshot
 process, preventing a global performance hit to the system.
 
-\begin{figure}[H]
-  \begin{lstlisting}[caption="Delayed snapshotting"]
-  def take_snapshot(self, snapshot_id):
-    for node in self.nodes:
-      if node.is_materialized:
-        cloned_state = node.state.clone()
-        logged_updates = self.logged_updates[node]
-        for update in logged_updates:
-          cloned_state.revert(update)
+\begin{listing}[H]
+  \begin{minted}[frame=single]{python}
+def take_snapshot(self, snapshot_id):
+  for node in self.nodes:
+    if node.is_materialized:
+      cloned_state = node.state.clone()
+      logged_updates = self.logged_updates[node]
+      for update in logged_updates:
+        cloned_state.revert(update)
 
-        write_snapshot(node, snapshot_id, cloned_state)
-        notify_controller(snapshot_id)
-  \end{lstlisting}
-\end{figure}
+      write_snapshot(node, snapshot_id, cloned_state)
+      notify_controller(snapshot_id)
+  \end{minted}
+  \caption{Delayed snapshotting}
+\end{listing}
 
 \subsubsection{Discarding log entries}
 When a node in the graph eventually snapshots its state, the controller should
@@ -542,21 +624,22 @@ crucial that the controller persists the current snapshot ID \textit{before} it
 tells the nodes to discard their log entries, ensuring that the system knows
 which snapshot that should be used at the point of recovery.
 
-\begin{figure}[H]
-  \begin{lstlisting}[caption="Controller callback for snapshot acknowledgments"]
-  def receive_snapshot_ack(self, node_id, snapshot_id):
-    self.node_snapshot_ids[node_id] = snapshot_id
-    # Make sure we only "complete" a snapshot when all nodes
-    # have persisted theirs:
-    if min(self.node_snapshot_ids.values()) < self.snapshot_id:
-      return
+\begin{listing}[H]
+  \begin{minted}[frame=single]{python}
+def receive_snapshot_ack(self, node_id, snapshot_id):
+  self.node_snapshot_ids[node_id] = snapshot_id
+  # Make sure we only "complete" a snapshot when all nodes
+  # have persisted theirs:
+  if min(self.node_snapshot_ids.values()) < self.snapshot_id:
+    return
 
-    persist_snapshot_id(snapshot_id)
-    for node in self.base_nodes:
-      domain = node.domain()
-      domain.send(packet::DiscardLogs, snapshot_id)
-  \end{lstlisting}
-\end{figure}
+  persist_snapshot_id(snapshot_id)
+  for node in self.base_nodes:
+    domain = node.domain()
+    domain.send(packet::DiscardLogs, snapshot_id)
+  \end{minted}
+  \caption{Controller callback for snapshot acknowledgments}
+\end{listing}
 
 Recovery is then a matter of first loading each materialized node's state from
 their local snapshot, then replaying the rest of the log entries available.

@@ -54,8 +54,6 @@ distributed systems.
   Letters, 25(3):
 
 ## Plan
-* Write about Soup workers, Souplets and worker pools.
-* Include something about evmap for readers.
 * Write a little bit more about Rust, provide an example for move semantics.
 * ACID (cite or describe)
 * Move logging example
