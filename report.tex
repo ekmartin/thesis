@@ -1,11 +1,14 @@
 \documentclass[b5paper]{report}
 
-\usepackage[utf8]{inputenc}
 \usepackage{listings}
 \usepackage{color}
 \usepackage{xcolor}
 \usepackage{tikz}
+\usepackage{graphicx}
+\usepackage{svg}
+\usepackage{float}
 
+\graphicspath{{images/}}
 \usetikzlibrary{positioning}
 \usetikzlibrary{shapes,decorations,shadows}
 
@@ -25,10 +28,32 @@
 \pagebreak
 
 \chapter{Introduction}
-% TODO: explain what soup is, what it's trying to achieve.
-% say how recovery is done in soup, and how snapshotting would speed it up.
-% why is snapshotting in soup hard, and how does it correspond to distributed
-% snapshotting.
+Soup is a high-performance database system developed at the Parallel and
+Distributed Operating System group at MIT CSAIL. Soup builds up and maintains a
+data-flow graph, avoiding the need to manually maintain materialized views. By
+adapting the graph to schema changes on-the-fly, Soup avoids the substantial
+downtime that comes with migrations in traditional relational database
+management systems.
+
+Utilizing a group-commit protocol, Soup persists all base table writes to
+a log on durable storage before propagating changes throughout the graph.
+Recovery is based on replaying the semantic updates in this log, which naturally
+leads to gradually increasing recovery times as a database acquires more data.
+Checkpointing by taking a snapshot of the database's current state is a common
+way to solve this issue, reducing the size of the log at the same time. This is
+not trivial in Soup however, where the data is spread across materializations in
+the data-flow graph, and updates are propagated through asynchronously without
+timestamps.
+
+This thesis approaches the problem of creating a logically consistent snapshot
+across Soup's data-flow graph by comparing it to a distributed system, where
+each node in the graph can be seen as a node in a distributed setting. Soup as a
+system is introduced in Chapter 2, whereas Chapter 3 looks at and compares
+recovery solutions in different database systems before going into more detail
+regarding Soup's solution for recovery. Then, various solutions for
+snapshotting in distributed systems are investigated, while parallels to Soup's
+own data-flow graph are drawn. Finally, a method for snapshotting in Soup is
+proposed, implemented and compared to the baseline of only log based recovery.
 
 \chapter{Background}
 \section{Soup}
@@ -80,7 +105,7 @@ the graph.
 The query graph includes at least one materialized node per pre-defined query,
 located at the bottom of the graph as leaf nodes. This means that reading from
 the system is a matter of finding the relevant leaf node, and retrieving data
-from the node's materialized storage. This is one of the elements that make Soup
+from the node's materialized storage. This is one of the elements that makes Soup
 resemble more of a key-vaule store than a traditional RDBMS. Even though Soup
 supports advanced SQL queries, both mutations and retrievals are done with a
 key, which then maps to a corresponding value.
@@ -95,8 +120,23 @@ constructing a completely new query graph. Instead Soup uses multi-query
 optimization techniques to create common sub-graphs of nodes that can be used in
 multiple queries.
 
+\subsubsection{Domains}
+Soup's data-flow graph is divided into logical domains, where each domain
+contains a series of nodes. Within a domain, a single update is processed at a
+time, removing the need for internal locks. Each domain is separated into a
+different computational entity, either a thread, or a separate Soup client when
+the system is run in a distributed fashion.
+
+Domains are separated by ingress and egress nodes, where a boundary between
+these are formed on the form of a buffered channel. In a multi-machine Soup
+setup, the ingress and egress nodes are connected with TCP connections instead.
+
+Note that domains do not handle read operations. These are served directly from
+the leaf nodes by separate worker threads, maintaining high read performance
+even in the midst of processing a large amount of writes.
+
 \subsection{Materialization}
-Similar to in traditional relational databases, writes are inserted into the
+Similar to traditional relational databases, writes are inserted into the
 table directly - a base node in Soup. Whereas this marks the end of the
 operation for an RDBMS, Soup will continue by propagating the write throughout
 the query graph, storing the result at materialized nodes.
@@ -296,11 +336,11 @@ recovery process after failures. This is akin to the recovery system currently
 being used in Soup, where each write request is logged with its corresponding
 data.
 
-With only a coarse-grained command log recovery, times would steadily increase as
-an application gains more data, as all log entries would have to be processed to
-reach the system's previous state. This is unfeasible, and systems like VoltDB
-opt for checkpointing as a way of minimizing the size of the log that has to be
-replayed during recovery.
+With only a coarse-grained command log, recovery times would steadily increase
+as an application gains more data, as all log entries would have to be processed
+during recovery to reach the system's previous state. This is unfeasible, and
+systems like VoltDB opt for checkpointing as a way of minimizing the size of the
+log that has to be replayed during recovery.
 
 \section{Snapshotting}
 Snapshotting a running Soup instance's entire state is far from trivial.
@@ -341,31 +381,95 @@ these messages can be sent out in parallel, the time to complete a snapshot is
 \textit{O(d)}, where \textit{d} is the diameter of the graph.
 
 Lai and Yang \cite{lai-yang} later extend this scheme with support for non-FIFO
-channels, and obleviate the need for explicit control messages by piggy-backing
+channels, which obleviates the need for explicit control messages by piggy-backing
 the required information onto existing messages.
 
 \subsection{Snapshotting in Soup}
 Soup's current recovery technique involves going through all log entries
 available, and processing each individual entry as if it was a new write to the
-system. No matter the recovery performance, the size of the log will regardless
+system. Regardless of the recovery performance, the size of the log will
 continue to grow with the lifetime of each Soup application. By introducing
 snapshotting of materialized nodes, Soup would be able to discard a significant
 part of the log at each snapshot, avoiding a continual growth in log size.
 
 Soup's query graph communicates over FIFO channels, which makes it possible to
 rely on Chandy-Lamport's marker technique to signify which updates should be
-considered a part of the snapshot. Implemented naively this would lead to the
-entire graph snapshotting at the same time however, which would undoubtely cause
-a slow down in throughput. Thus we can say that we want snapshots to happen at
-\textit{logically} the same time, but not at the same \textit{physical} instant.
+considered a part of the snapshot. To do so we introduce a \texttt{TakeSnapshot}
+packet, which serves as the marker in the Chandy-Lamport algorithm. This marker
+can then be propagated from the controller, to each of its base nodes, and then
+throughout the rest of the graph.
 
-This adds a layer of complexity. Soup's materialized state is kept in a
-lock-free hash map, and there is no log kept at each separate node. This means
-that a node's internal state has to be cloned when a snapshot request is
-received, and that no additional updates can be processed until that has
-happened. Doing so would however mean either snapshotting at roughly the same
-physical time across the graph, or blocking additional updates for a period of
-time.
+\begin{figure}[H]
+  \begin{lstlisting}[caption="Initating a snapshot from the controller"]
+  def initialize_snapshot(self):
+    self.snapshot_id += 1
+    for node in self.base_nodes:
+      domain = node.domain()
+      domain.send(packet::TakeSnapshot, snapshot_id)
+
+    for node in self.nodes:
+      domain = node.domain()
+      domain.wait_for_acknowledge()
+  \end{lstlisting}
+\end{figure}
+
+Domains that receive the \texttt{TakeSnapshot} packet proceed to initialize the
+snapshotting process. After persisting a snapshot, the nodes notify the
+controller that they have done so, letting it eventually discard log entries
+when it has confirmed that all materialized nodes have created a snapshot with
+id \texttt{snapshot\_id}. Implemented naively, this could involve simply
+serializing each node's state at a domain, then persisting these to disk, while
+blocking updates from the rest of the system:
+
+\begin{figure}[H]
+  \begin{lstlisting}[caption="Naive beginning of a snapshot implementation for domains"]
+  def take_snapshot(self, snapshot_id):
+    for node in self.nodes:
+      if node.is_materialized:
+        state = node.state.binary_serialize()
+        domain = node.domain()
+        index = node.local_index()
+        filename = "snapshot-#{snapshot_id}-#{domain}_#{index}.bin"
+        file = open(filename)
+        file.write(state)
+        notify_controller(node, snapshot_id)
+
+  \end{lstlisting}
+\end{figure}
+
+This would fulfill the properties of Chandy-Lamport's method, as each domain
+stops processing messages until it has completed taking a snapshot. On the other
+hand writing to persistent storage is far from fast, which means this would
+undoubtedly slow down the throughput of the rest of the system. However, the
+fact that the system has to snapshot the state at the exact logical moment the
+marker is received does not mean that it has to persist the snapshot to disk at
+the very same moment. An improvement to our initial \texttt{take\_snapshot}
+attempt would then be to serialize the state synchronously, while writing the
+snapshot to disk in a separate thread:
+
+\begin{figure}[H]
+  \begin{lstlisting}[caption="Asynchronous snapshotting"]
+  def take_snapshot(self, snapshot_id):
+    for node in self.nodes:
+      if node.is_materialized:
+        state = node.state.binary_serialize()
+        thread:
+          filename = "snapshot-#{node.domain()}_{node.local_index()}.bin"
+          file = open(filename)
+          file.write(state)
+          notify_controller(snapshot_id)
+  \end{lstlisting}
+\end{figure}
+
+\subsubsection{Delayed snapshotting}
+Now the domain only needs to block while performing the state serialization - an
+improvement. At this point our prototype still creates snapshots at roughly the
+same point across the graph however, which means that we would block processing
+at each domain containing materialized nodes when this happens. To address this
+the system will need to ensure that different domains do as little as possible
+when receiving a snapshot marker simultaneously, ensuring that snapshots happen
+at \textit{logically} the same time, but not in the same \textit{physical}
+instant.
 
 The solution this thesis proposes is to maintain a buffered log of writes that
 are received after the snapshot marker, letting the system re-create the state
@@ -375,18 +479,68 @@ from \textit{n} to \textit{m}, $ S_n $ can be re-created through
 $ S_m - L_{n..m} $. This lets individual nodes delay initializing the snapshot
 process, preventing a global performance hit to the system.
 
-When a node in the graph eventually snapshots its state, the base node should be
-notified of its completion. The snapshots are already persisted to disk, so
+\begin{figure}[H]
+  \begin{lstlisting}[caption="Delayed snapshotting"]
+  def take_snapshot(self, snapshot_id):
+    for node in self.nodes:
+      if node.is_materialized:
+        cloned_state = node.state.clone()
+        logged_updates = self.logged_updates[node]
+        for update in logged_updates:
+          cloned_state.revert(update)
+
+        write_snapshot(node, snapshot_id, cloned_state)
+        notify_controller(snapshot_id)
+  \end{lstlisting}
+\end{figure}
+
+\subsubsection{Discarding log entries}
+When a node in the graph eventually snapshots its state, the controller should
+be notified of its completion. The snapshots are already persisted to disk, so
 including the actual data in these messages are unneccessary. They should on the
-other hand should include an identifier to the current snapshot request, so that
-the system eventually knows when an entire graph has performed the same
-snapshot. At that point the identifier of the snapshot can be persisted to disk,
-while simultaneously discarding the log prior to the snapshot.
+other hand include an identifier to the current snapshot request, so that the
+system eventually knows when the entire graph has performed the same snapshot.
+At that point the identifier of the snapshot can be persisted to disk, while
+simultaneously discarding the log prior to the snapshot.
+
+This means that the controller has to maintain a list of which nodes it is still
+waiting for snapshots from, ensuring that it only attempts to discard parts of
+the log after all nodes have successfully persisted a snapshot. It is also
+crucial that the controller persists the current snapshot ID \textit{before} it
+tells the nodes to discard their log entries, ensuring that the system knows
+which snapshot that should be used at the point of recovery.
+
+\begin{figure}[H]
+  \begin{lstlisting}[caption="Controller callback for snapshot acknowledgments"]
+  def receive_snapshot_ack(self, node_id, snapshot_id):
+    self.node_snapshot_ids[node_id] = snapshot_id
+    # Make sure we only "complete" a snapshot when all nodes
+    # have persisted theirs:
+    if min(self.node_snapshot_ids.values()) < self.snapshot_id:
+      return
+
+    persist_snapshot_id(snapshot_id)
+    for node in self.base_nodes:
+      domain = node.domain()
+      domain.send(packet::DiscardLogs, snapshot_id)
+  \end{lstlisting}
+\end{figure}
 
 Recovery is then a matter of first loading each materialized node's state from
 their local snapshot, then replaying the rest of the log entries available.
 
-% TODO: summarize procedure
+\subsubsection{Failure before discarding the log}
+In the event of a failure \textit{after} the controller has persisted the
+snapshot ID to disk, but \textit{before} all nodes have managed to discard the
+correct log entries from durable storage, duplicate replaying of those log
+entries upon recovery is a possibility.
+
+To prevent this from happening, each log
+entry should include the last snapshot ID the domain successfully discarded.
+When recovering log entries that existed before the latest snapshot can then be
+ignored. This is possible because the system is certain that each domain has an
+available persisted snapshot at this point, as it would not have told it to
+discard log entries otherwise.
 
 \chapter{Results}
 \chapter{Discussion}

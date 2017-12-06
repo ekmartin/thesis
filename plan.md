@@ -52,3 +52,51 @@ distributed systems.
   puting.
 * T. H. Lai and T. H. Yang. On distributed snapshots. Information Processing
   Letters, 25(3):
+
+## Plan
+* Write about Soup workers, Souplets and worker pools.
+* Include something about evmap for readers.
+* Write a little bit more about Rust, provide an example for move semantics.
+* ACID (cite or describe)
+* Move logging example
+* Formalize snapshot requirement
+* Describe snapshot protocol in soup in pseudo code
+  - Clarify that we're building up a snapshot protocol in steps
+* More figures:
+  - Group commit protocol
+  - Which nodes are materialized (under 3.2 Snapshotting)
+* Examples:
+  - JSON log entry
+
+New stuff to write:
+* Write about the snapshotting implementation (Snapshotting and Logging in Soup).
+We've written an overview, this section should rather go into the details of how
+it works in Soup.
+  - Exactly which packets are sent, what happens when they're received?
+    - How is a snapshot initiated?
+    - How is a snapshot packet forwarded through the graph?
+    - What happens when a node receives two snapshot packets?
+    - What happens when a node receives two recovery packets?
+  - How is a snapshot taken and restored? bincode
+  - Exactly what is snapshotted? readers, nodes
+  - How is a snapshot ACK sent? (SnapshotPersister)
+  - Snapshot ID in log entries (ignore on recovery)
+  - Maybe testing
+
+* Results:
+  - Improvement in recovery time. Compare recovery time for a vote runtime of
+    120s, with varying snapshot timeouts? Also against baseline of no
+    snapshotting.
+  - Graph for write throughput with different snapshot timeouts.
+  - Graph with CPU starved (one core maybe?)
+
+* Improvement Options:
+  - Persisting snapshots to distributed remote storage, avoiding coordination
+    messages from domains to controllers.
+  - Completely asynchronous snapshots.
+
+* Conclusion:
+Snapshots are good, and a needed supplement to logging for in-memory databases.
+Using snapshotting algorithms primarily made for distributed systems works, but
+it would be interesting to look at completely asynchronous and local snapshots.
+Throughput reduction not that bad.
