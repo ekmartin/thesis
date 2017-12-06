@@ -135,6 +135,38 @@ Note that domains do not handle read operations. These are served directly from
 the leaf nodes by separate worker threads, maintaining high read performance
 even in the midst of processing a large amount of writes.
 
+\subsection{Architecture}
+At the core of a running Soup system is the controller, which serves as the
+initial entry point for communication with the rest of the Soup system. Clients
+communicate with the controller over a TCP-based remote procedure call (RPC)
+interface, exposing a series of building blocks that open for interaction with
+the database. Two of the most central parts here are mutators and getters, which
+allow respectively writing and reading from the data-flow graph. After getting a
+hold of a mutator, clients perform writes and reads without going through the
+controller. While this avoids the controller becoming a performance bottleneck,
+the argument that the controller corresponds to a single failure point for a
+distributed Soup still holds. The latest version of Soup improves this by making
+controllers fault-tolerant, using ZooKeeper \cite{zookeeper} to implement
+consensus.
+
+The actual work performed by a Soup system is done in Souplets, which
+correspond to separate instances that communicate in a distributed fashion. Each
+Souplet has a pool of workers, where domains are spread throughout the pool.
+Previous implementations of Soup ran each domain in its own separate thread,
+which led to reduced performance when the amount of domains went up in
+core-constrained systems. A worker pool solves this by setting a cap on the
+amount of threads that process domains, such that a single thread might be
+responsible for processing packets for multiple domains.
+
+Soup also supports running completely in one process, which is convenient for
+local development and testing. In that case there is only a single worker pool,
+which the controller is responsible for starting.
+
+Communication between the Souplet instances and the controller is done over TCP,
+in a layer that is referred to as the coordination plane. This involves
+heartbeat messages, but also packets that are sent when domains are assigned,
+re-assigned and removed to different Souplet instances.
+
 \subsection{Materialization}
 Similar to traditional relational databases, writes are inserted into the
 table directly - a base node in Soup. Whereas this marks the end of the
