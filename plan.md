@@ -57,6 +57,7 @@ distributed systems.
 * Write a little bit more about Rust, provide an example for move semantics.
 * Positive and negative updates
 * Checktable stuff
+* Sharding
 * ACID (cite or describe)
 * Formalize snapshot requirement
 * Describe snapshot protocol in soup in pseudo code
@@ -69,16 +70,14 @@ New stuff to write:
 * Write about the snapshotting implementation (Snapshotting and Logging in Soup).
 We've written an overview, this section should rather go into the details of how
 it works in Soup.
+  - Difference between local and remote Soup.
   - Exactly which packets are sent, what happens when they're received?
     - How is a snapshot initiated?
     - How is a snapshot packet forwarded through the graph?
     - What happens when a node receives two snapshot packets?
     - What happens when a node receives two recovery packets?
   - How is a snapshot taken and restored? bincode
-  - Exactly what is snapshotted? readers, nodes
-  - How is a snapshot ACK sent? (SnapshotPersister)
   - Snapshot ID in log entries (ignore on recovery)
-  - Maybe testing
 
 * Results:
   - Improvement in recovery time. Compare recovery time for a vote runtime of

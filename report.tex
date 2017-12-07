@@ -4,6 +4,7 @@
 \usepackage{xcolor}
 \usepackage{tikz}
 \usepackage{graphicx}
+\usepackage{wrapfig}
 \usepackage{svg}
 \usepackage{float}
 \usepackage{url}
@@ -171,7 +172,7 @@ in a layer that is referred to as the coordination plane. This involves
 heartbeat messages, but also packets that are sent when domains are assigned,
 re-assigned and removed to different Souplet instances.
 
-\subsubsection{Backlog}
+\subsubsection{Backlog} \label{sec:readers}
 Data written through mutators are sent through the data-flow graph, where they
 eventually reach the leaf nodes: the readers. Here data is persisted into an
 in-memory eventually consistent data structure, an \texttt{evmap} \cite{evmap}.
@@ -180,7 +181,7 @@ avoiding the need to go through the entire graph to retrieve data.
 \texttt{evmap} implements reading without any locks at all, avoiding degrading
 performance for read-heavy work loads.
 
-\subsection{Materialization}
+\subsection{Materialization} \label{sec:materialization}
 Similar to traditional relational databases, writes are inserted into the
 table directly - a base node in Soup. Whereas this marks the end of the
 operation for an RDBMS, Soup will continue by propagating the write throughout
@@ -655,7 +656,7 @@ TakeSnapshot:
   }
 \end{listing}
 
-\subsubsection{Asynchronous snapshotting}
+\subsubsection{Asynchronous snapshotting} \label{sec:async-snapshot}
 This would fulfill the properties of Chandy-Lamport's method and follow our
 first snapshotting rule, as each domain stops processing updates until it has
 completed taking a snapshot. On the other hand, writing to persistent storage is
@@ -746,7 +747,7 @@ TakeSnapshotDelayed:
 \subsubsection{Snapshot confirmations}
 When a node in the graph eventually snapshots its state, the controller should
 be notified of its completion, as shown in \texttt{SnapshotWorker} from listing
-\ref{async-snapshots}. The snapshots are already persisted to disk, so including
+\ref{async-snapshot}. The snapshots are already persisted to disk, so including
 the actual data in these messages are unneccessary. They should on the other
 hand include an identifier to the current snapshot request, so that the system
 eventually knows when the entire graph has performed the same snapshot. At that
@@ -787,6 +788,106 @@ available persisted snapshot at this point, as it would not have told it to
 discard log entries otherwise.
 
 \section{Implementing snapshotting in Soup}
+The previous sections described the need for snapshotting as an addition to log
+based recovery in Soup, and outlined a few viable algorithms for doing so. This
+section highlights the actual snapshotting implementation that was developed
+during this thesis, and a few of the choices that were made throughout the
+process.
+
+The implementation roughly follows along the lines of the asynchronous
+snapshotting algorithm described in section \ref{sec:async-snapshot}. The
+controller initiates snapshots through a specific marker, domains process
+snapshots by cloning their nodes' state, and a snapshot worker is responsible
+for serialization and persisting of the snapshots, followed by notifying the
+controller of each domain's snapshot completion.
+
+\subsection{Initializing a snapshot} \label{sec:snapshot-init}
+\begin{wrapfigure}{r}{0.5\textwidth}
+  \begin{center}
+    \includesvg[width=0.4\textwidth]{take-snapshot}
+    \caption{
+      Snapshots are initialized when the controller sends a
+      \texttt{TakeSnapshot} packet, and forwarded through the query graph by
+      each domain. \label{fig:take-snapshot}
+    }
+  \end{center}
+\end{wrapfigure}
+
+Snapshots are initialized by the Soup controller using a special marker packet,
+\texttt{TakeSnapshot}. This happens at a regular interval, as defined by the
+configuration option \texttt{snapshot\_timeout}. The Soup controller processes
+events in a single event loop, and a snapshot is triggered by emitting an
+event to this internal loop. This is done from a separate snapshotting thread,
+which sleeps until it is time to take a snapshot.
+
+When the controller's main loop receives a request to trigger a snapshot, it
+first makes sure that it has received all confirmations from the previous
+snapshot before continuing. After doing so it increments its
+\texttt{snapshot\_id}, and fires off a \texttt{TakeSnapshot} packet to each of
+the base node domains in its query graph. Finally, it finishes, without waiting
+for replies or confirmations from the domains it requested a snapshot of.
+
+\subsection{Snapshotting at domains}
+Whenever a domain receives a \texttt{TakeSnapshot} packet, it creates a cloned
+copy of each of its materialized nodes' states. As shown in
+\ref{fig:take-snapshot}, each domain then forwards the snapshotting packet on to
+its children in the query graph, ensuring that each materialized node eventually
+gets snapshotted. Finally, it sends the cloned states to its
+\texttt{SnapshotWorker}, by issuing a \texttt{PersistSnapshotRequest}.
+
+Forwarding of the \texttt{TakeSnapshot} packet by individual domains are done
+through the egress nodes. Taking figure \ref{fig:take-snapshot} as an example,
+domain A and C would be connected by respectively one egress node, in domain A,
+and one ingress node, in domain C. As each domain runs in a separate
+computational unit, the snapshot method in domain A will be able to finish even
+if domain C has not.
+
+\subsubsection{Snapshotting readers}
+The snapshotting algorithm describes persisting the state of materialized nodes.
+Although that is true, reality is slightly more nuanced. Materialized nodes in
+Soup can be both internal and external, where the latter is represented through
+readers, as discussed briefly in section \ref{sec:readers}. Both the internally
+materialized nodes, and the readers, can as section \ref{sec:materialization}
+states be both partially and fully materialized, meaning that a read request
+might refer upwards to its ancestors nodes to fulfill a query it does not have
+materialized state for. This does not make too much of a difference for the
+snapshotting algorithm however, as we snapshot partially and fully materialized
+nodes in the same way.
+
+The state of readers and internal nodes are on the other hand represented
+differently in the system, which means they need to be snapshotted and recovered
+from in slightly different ways.
+
+\subsection{Performing snapshot requests}
+While each domain is responsible for gathering up the cloned copies of state
+needed to eventaully recover from a failure, the actual serialization and
+persisting of snapshots happens in separate snapshot workers. The current
+implementation runs one of these per worker pool, resulting in one thread
+per running Soup instance. This could be increased as needed, but it is
+favorable that snapshots happen over a longer time to prevent reducing the
+system's throughput during the snapshotting process.
+
+When a domain has finished cloning the state of its materialized nodes, it
+notifies its local snapshot worker through an asynchronous and unbounded
+buffered \texttt{channel} \cite{rust-channels}. This ensures that snapshot
+processing can happen separately, without having to block the domain's regular
+workload. The snapshot worker receives \texttt{PersistSnapshotRequest} events
+one by one, and processes them synchronously. This involves serializing the
+cloned state, persisting it to disk, and finally notifying the controller of a
+domain's snapshot completion.
+
+\subsection{Receiving snapshot confirmations}
+The controller listens for snapshot confirmations on a TCP socket normally used
+for coordination messages between the controller and its individual Souplet
+workers. Whenever it receives an acknowledgement packet from a snapshot worker,
+it stores the given \texttt{snapshot\_id} in a \texttt{HashMap} mapping each
+domain that contains at least one materialized node to their current snapshot
+ID. Note that domains can be sharded, so each instance in the map represents an
+individual shard of a single domain.
+
+When each shard has completed its snapshot, the current \texttt{snapshot\_id} is
+persisted to disk, allowing the next snapshot to be initiated as described in
+section \ref{sec:snapshot-init}.
 
 \chapter{Results}
 
