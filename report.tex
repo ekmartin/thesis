@@ -332,7 +332,7 @@ durable, we make sure that we can recover from a potential crash. For
 transactional systems we also maintain enough data to be able to achieve
 atomicity for transactions.
 
-\section{Recovery in Main-Memory Databases}
+\section{Recovery in Main-Memory Databases} \label{main-memory-recovery}
 Accessing and writing to durable storage is consistently a bottleneck in
 database storage systems. Even though database systems that rely on non-volatile
 storage for durability can have large amounts of data available in RAM, writes
@@ -382,6 +382,35 @@ achieve two key properties, as stated by \cite{memory-checkpoint}:
   \item Checkpointing should not introduce high amounts of latency to the
     system's regular processing.
 \end{enumerate}
+
+\section{Rust}
+Rust \cite{rust} is an open-source systems programming language that guarantees memory
+safety while maintaining a minimal runtime. Rust is sponsored by Mozilla, where
+it is used to develop Servo - a completely new browser engine.
+
+\begin{listing}
+  \begin{minted}[frame=single]{rust}
+fn main() {
+  println!("Hello World!");
+}
+  \end{minted}
+  \caption{Hello World in Rust}
+\end{listing}
+
+When choosing a language, developers are often forced to compromise between
+higher level abstractions and performance. Large and latency sensitivy projects
+like databases often opt for the latter through low-level languages like C,
+which avoid expensive runtime safety checks. Rust removes this dilemma
+altogether by providing developers with both the fine-tuned control and
+performance they are used to in low-level languages, while offering abstractions
+developers might be familiar with from interepretted languages.
+
+One of Rust's key features is providing compile time safety both in terms of
+types and memory. The latter is done through an ownership model which lets
+developers program mostly without thinking about memory allocation and
+deallocation, without the lowered performance of using something like a garbage
+collector. Each variable in Rust is assigned one and only one owner, and the
+variable is deallocated - or dropped - when that owner goes out of scope.
 
 \chapter{Methodology}
 
@@ -458,27 +487,35 @@ created by the recovery packet. This is done through a specific RPC request to t
 checktable.
 
 \section{Snapshotting}
-While being able to replay log entries during recovery gives Soup durability, it is far
-from a feasible option for a production level database management system. With
-time, the log files would grow unbounded, resulting in unbearable recovery times
-for any long running Soup system.
+While being able to replay log entries during recovery
+gives Soup durability, it is far from a feasible option for a production level
+database management system. With time, the log files would grow in an unbounded
+fashion, resulting in constantly increasing recovery times for any long running
+Soup system.
 
-Snapshotting a running Soup instance's entire state is far from trivial.
+Checkpointing of the entire system's state is, as section
+\label{main-memory-recovery} describes, a common way to deal with this for
+main-memory database systems. By creating a recoverable checkpoint of the
+system's state, log entries prior to the checkpoint can be discarded, which
+makes sure that the system's recovery time remains manageable.
+
+Snapshotting a running Soup instance's entire state is not trivial however.
 Main memory systems like VoltDB leverage checkpointing by persisting the
 transactional state of commmitted transactions, using log sequence numbers to be
-able to track which updates have been reflected on disk. In Soup, state is
-materialized at a variety of nodes throughout the query graph, and updates have no
-timestamps or sequence numbers attached to them. Updates also propagate through
-the graph asynchronously, and a specific update is likely to reach different
-points in the graph at separate times. Taking a global snapshot of the entire
-graph would thus mean capturing nodes at different logical points, as a write
-might be in the process of propagating throughout the graph.
+able to track which updates have been reflected on disk \cite{voltdb-recovery}.
+In Soup, state is materialized at a variety of nodes throughout the query graph,
+and updates have no timestamps or sequence numbers attached to them. Updates
+also propagate through the graph asynchronously, and a specific update is likely
+to reach different points in the graph at separate times. Taking a global
+snapshot of the entire graph simulatenously would thus mean capturing nodes at
+different logical points, as an update might be in the process of propagating
+throughout the graph at the time that the snapshot is initiated.
 
-The nature of Soup's update propagation through a query graph resembles the
-communication done in a distributed system, where access to a common clock is
-rare. Being able to observe the global state in a distributed system is an
-immensely useful property, and is crucial to resolving problems such as deadlock
-detection.
+In a way, the nature of Soup's update propagation through a query graph
+resembles the communication done in a distributed system, where access to a
+common clock is rare. Being able to observe the global state in such a
+distributed system is an immensely useful property, and is crucial to resolving
+problems such as deadlock detection.
 
 Chandy and Lamport first introduced the problem of a distributed snapshot in
 "Distributed Snapshots: Determining Global States of Distributed Systems"
@@ -505,12 +542,22 @@ channels, which obleviates the need for explicit control messages by piggy-backi
 the required information onto existing messages.
 
 \subsection{Snapshotting in Soup}
-Soup's current recovery technique involves going through all log entries
-available, and processing each individual entry as if it was a new write to the
-system. Regardless of the recovery performance, the size of the log will
-continue to grow with the lifetime of each Soup application. By introducing
-snapshotting of materialized nodes, Soup would be able to discard a significant
-part of the log at each snapshot, avoiding a continual growth in log size.
+As mentioned above, snapshotting the state of a running Soup instance would mean
+persisting the content of each materialized node in the system. This needs to be
+done at the same logical point in time, ensuring that updates have either
+propagated to all nodes that are being snapshotted - or none of them, leading to
+a consistent state after recovering from a failure. At the same time,
+creating a snapshot should not slow down the system too much, and definitely not
+stop the system from processing updates completely. From this we can derive a
+few base rules for our snapshotting algorithm:
+
+\begin{enumerate}
+  \item Each node's snapshot needs to include exactly the same updates across
+    the graph.
+  \item Snapshots should complete in a reasonable amount of time.
+  \item Taking a snapshot of the system should not signifantly degrade its
+    throughput.
+\end{enumerate}
 
 Soup's query graph communicates over FIFO channels, which makes it possible to
 rely on Chandy-Lamport's marker technique to signify which updates should be
@@ -521,15 +568,13 @@ throughout the rest of the graph.
 
 \begin{listing}[H]
   \begin{minted}[frame=single]{python}
-def initialize_snapshot(self):
-  self.snapshot_id += 1
-  for node in self.base_nodes:
-    domain = node.domain()
-    domain.send(packet::TakeSnapshot, snapshot_id)
+InitializeSnapshot:
+  snapshot_id += 1
+  for node in base_nodes:
+    node.send(TakeSnapshot, snapshot_id)
 
-  for node in self.nodes:
-    domain = node.domain()
-    domain.wait_for_acknowledge()
+  for node in base_nodes:
+    node.wait_for_ack()
   \end{minted}
 
   \caption{Initating a snapshot from the controller}
@@ -660,36 +705,6 @@ When recovering log entries that existed before the latest snapshot can then be
 ignored. This is possible because the system is certain that each domain has an
 available persisted snapshot at this point, as it would not have told it to
 discard log entries otherwise.
-
-\section{Rust}
-Rust \cite{rust} is an open-source systems programming language that guarantees memory
-safety while maintaining a minimal runtime. Rust is sponsored by Mozilla, where
-it is used to develop Servo - a completely new browser engine.
-
-\begin{listing}
-  \begin{minted}[frame=single]{rust}
-fn main() {
-  println!("Hello World!");
-}
-  \end{minted}
-  \caption{Hello World in Rust}
-\end{listing}
-
-When choosing a language, developers are often forced to compromise between
-higher level abstractions and performance. Large and latency sensitivy projects
-like databases often opt for the latter through low-level languages like C,
-which avoid expensive runtime safety checks. Rust removes this dilemma
-altogether by providing developers with both the fine-tuned control and
-performance they are used to in low-level languages, while offering abstractions
-developers might be familiar with from interepretted languages.
-
-One of Rust's key features is providing compile time safety both in terms of
-types and memory. The latter is done through an ownership model which lets
-developers program mostly without thinking about memory allocation and
-deallocation, without the lowered performance of using something like a garbage
-collector. Each variable in Rust is assigned one and only one owner, and the
-variable is deallocated - or dropped - when that owner goes out of scope.
-
 
 \chapter{Results}
 \chapter{Discussion}
