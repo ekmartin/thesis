@@ -7,6 +7,7 @@
 \usepackage{svg}
 \usepackage{float}
 \usepackage{url}
+\usepackage{parskip}
 \usepackage[chapter]{minted}
 
 \graphicspath{{images/}}
@@ -494,7 +495,7 @@ fashion, resulting in constantly increasing recovery times for any long running
 Soup system.
 
 Checkpointing of the entire system's state is, as section
-\label{main-memory-recovery} describes, a common way to deal with this for
+\ref{main-memory-recovery} describes, a common way to deal with this for
 main-memory database systems. By creating a recoverable checkpoint of the
 system's state, log entries prior to the checkpoint can be discarded, which
 makes sure that the system's recovery time remains manageable.
@@ -541,11 +542,11 @@ Lai and Yang \cite{lai-yang} later extend this scheme with support for non-FIFO
 channels, which obleviates the need for explicit control messages by piggy-backing
 the required information onto existing messages.
 
-\subsection{Snapshotting in Soup}
+\subsection{Snapshotting algorithm}
 As mentioned above, snapshotting the state of a running Soup instance would mean
 persisting the content of each materialized node in the system. This needs to be
-done at the same logical point in time, ensuring that updates have either
-propagated to all nodes that are being snapshotted - or none of them, leading to
+done at the same logical point in time, ensuring that updates either
+propagate to all nodes that are being snapshotted - or none of them, leading to
 a consistent state after recovering from a failure. At the same time,
 creating a snapshot should not slow down the system too much, and definitely not
 stop the system from processing updates completely. From this we can derive a
@@ -554,146 +555,225 @@ few base rules for our snapshotting algorithm:
 \begin{enumerate}
   \item Each node's snapshot needs to include exactly the same updates across
     the graph.
-  \item Snapshots should complete in a reasonable amount of time.
   \item Taking a snapshot of the system should not signifantly degrade its
     throughput.
+  \item Snapshots should complete in a reasonable amount of time.
 \end{enumerate}
 
+Using these rules, we can build up a snapshotting algorithm in incremental
+steps. Let us first consider a simple example that fails to meet the criteria
+however. Figure \ref{bad-example} shows a running Soup instance, where an update
+\texttt{A} is being propagated through the query graph. Ignoring the fact that
+the snapshotting request would have to arrive simultaneously at both domains
+from the controller, what would be the outcome if both the domains containing at
+least one materialized node, shown with a blue color in the graph, would take
+a snapshot at this very instant? Whereas the leftmost domain has had the time to
+process update \texttt{A}, the rightmost one has not. The two domain are at
+different \texttt{logical} points in time, meaning that the snapshot would fail
+the first rule.
+
+What would happen if the system instead waited until update A had gone through
+the entire graph, before initiating a snapshot? This would follow the first
+rule, while failing the second: no new updates could be served until the
+snapshot has been taken across the entire graph.
+
+\begin{figure}[H]
+  \centering
+  \includesvg[width=0.6\textwidth]{bad-example}
+  \caption{
+    A partial Soup query graph, where an update \texttt{A} propagates through
+    the domains in the query graph in an asynchronous manner. Domains 2 and 3
+    contain at least one materialized node, and should be snapshotted.
+    \label{bad-example}
+  }
+\end{figure}
+
+\subsubsection{Synchronous snapshotting}
 Soup's query graph communicates over FIFO channels, which makes it possible to
 rely on Chandy-Lamport's marker technique to signify which updates should be
-considered a part of the snapshot. To do so we introduce a \texttt{TakeSnapshot}
-packet, which serves as the marker in the Chandy-Lamport algorithm. This marker
-can then be propagated from the controller, to each of its base nodes, and then
-throughout the rest of the graph.
+considered a part of the snapshot. Domains that receive the snapshot marker
+initiate the snapshot process immediately, without any further processing of
+updates. This makes sure that our snapshotting algorithm follows the first rule,
+even if snapshots are taken at different physical points in time.
+
+\begin{figure}[H]
+  \centering
+  \includesvg[width=0.6\textwidth]{good-example}
+  \caption{
+    Similar to the partial query graph in figure \ref{bad-example}, an update
+    \texttt{A} is propating through the graph. This time it is followed by a
+    snapshot marker however, which makes sure that domains with materialized
+    nodes only snapshot when they receive the marker.
+    \label{good-example}
+  }
+\end{figure}
+
+The controller can then choose to take a snapshot of the entire graph by issuing
+a snapshot marker to its base nodes, \texttt{TakeSnapshot}, which is propagated
+through the rest of the graph. The controller keeps track of the current
+\texttt{snapshot\_id} by writing it to persistent storage after a snapshot
+completes, making sure that it can tell each domain which snapshot it should
+recover from after a failure.
 
 \begin{listing}[H]
   \begin{minted}[frame=single]{python}
 InitializeSnapshot:
   snapshot_id += 1
-  for node in base_nodes:
+  for node in base_nodes
     node.send(TakeSnapshot, snapshot_id)
 
-  for node in base_nodes:
+  for node in base_nodes
     node.wait_for_ack()
+
+  persist(snapshot_id)
   \end{minted}
 
-  \caption{Initating a snapshot from the controller}
+  \caption{Initating a snapshot from the controller.}
 \end{listing}
 
-Domains that receive the \texttt{TakeSnapshot} packet proceed to initialize the
+Domains that receive the snapshop marker proceed to initialize the
 snapshotting process. After persisting a snapshot, the nodes notify the
 controller that they have done so, letting it eventually discard log entries
 when it has confirmed that all materialized nodes have created a snapshot with
 id \texttt{snapshot\_id}. Implemented naively, this could involve simply
 serializing each node's state at a domain, then persisting these to disk, while
-blocking updates from the rest of the system:
+blocking updates from the rest of the system - as shown in listing
+\ref{naive-algo}.
 
 \begin{listing}[H]
   \begin{minted}[frame=single]{python}
-def take_snapshot(self, snapshot_id):
-  for node in self.nodes:
-    if node.is_materialized:
+TakeSnapshot:
+  for node in nodes
+    if node.is_materialized
       state = serialize(node.state)
       write(state)
       notify_controller(snapshot_id)
   \end{minted}
-  \caption{Naive beginning of a snapshot implementation for domains}
+  \caption{
+    Naive beginning of a snapshot implementation for domains.
+    \label{naive-algo}
+  }
 \end{listing}
 
-This would fulfill the properties of Chandy-Lamport's method, as each domain
-stops processing messages until it has completed taking a snapshot. On the other
-hand writing to persistent storage is far from fast, which means this would
-undoubtedly slow down the throughput of the rest of the system. However, the
-fact that the system has to snapshot the state at the exact logical moment the
-marker is received does not mean that it has to persist the snapshot to disk at
-the very same moment. An improvement to our initial \texttt{take\_snapshot}
-attempt would then be to serialize the state synchronously, while writing the
-snapshot to disk in a separate thread:
+\subsubsection{Asynchronous snapshotting}
+This would fulfill the properties of Chandy-Lamport's method and follow our
+first snapshotting rule, as each domain stops processing updates until it has
+completed taking a snapshot. On the other hand, writing to persistent storage is
+far from fast, and following the snapshot method in listing \ref{naive-algo}
+would mean a stop to domains' further update processing while snapshotting,
+slowing down the system's throughput. To combat this, we would need to complete
+the snapshotting in a separate computational unit, such as a thread, allowing
+the domain to continue with its regular processing. The algorithm shown in
+listing \ref{async-snapshot} does this by introducing a \texttt{SnapshotWorker},
+which processes snapshot requests sent by domains.
 
 \begin{listing}[H]
   \begin{minted}[frame=single]{python}
-def take_snapshot(self, snapshot_id):
-  for node in self.nodes:
-    if node.is_materialized:
-      state = serialize(node.state)
-      thread:
-        write(state)
-        notify_controller(snapshot_id)
+SnapshotWorker:
+  for event in listener
+      state = serialize(event.state)
+      write(state)
+      notify_controller(event.snapshot_id, event.state)
+
+TakeSnapshotAsync:
+  states = {}
+  for node in nodes
+    if node.is_materialized
+      states[node] = node.state.clone()
+
+  snapshot_worker.send(snapshot_id, states)
   \end{minted}
-  \caption{Asynchronous snapshotting}
+  \caption{
+    Serializing and persisting snapshots in a separate computational unit, a
+    \texttt{SnapshotWorker}.
+    \label{async-snapshot}
+  }
 \end{listing}
 
 \subsubsection{Delayed snapshotting}
-Now the domain only needs to block while performing the state serialization - an
-improvement. At this point our prototype still creates snapshots at roughly the
-same point across the graph however, which means that we would block processing
-at each domain containing materialized nodes when this happens. To address this
-the system will need to ensure that different domains do as little as possible
-when receiving a snapshot marker simultaneously, ensuring that snapshots happen
-at \textit{logically} the same time, but not in the same \textit{physical}
-instant.
+Now the domain only needs to block while performing a clone of its nodes' state
+- an improvement. At this point our algorithm still creates snapshots at roughly
+the same point across the graph however, which means that the load induced by
+taking a snapshot will be spread across the entire query graph. Comparing the
+synchronous snapshotting algorithm to the asynchronous one, the amount of work
+being done across the graph is far more in the former than the latter. With
+snapshotting happening locally in domains, the work is done in parallel across
+separate domains, whereas with a few snapshot workers each snapshot request is
+processed synchronously. This introduces a trade-off between snapshot completion
+time, and the load it puts on the system. However, long as each snapshot completes
+before it is time to start a new one, avoiding a potential performance hit to
+the system is far more crucial than being able to take snapshots quickly.
 
-The solution this thesis proposes is to maintain a buffered log of writes that
-are received after the snapshot marker, letting the system re-create the state
-at the point the snapshot marker was received. If the system's state at that
-point is denoted as $ S_n $, and $ L_{n..m} $ signifies the updates received
-from \textit{n} to \textit{m}, $ S_n $ can be re-created through
-$ S_m - L_{n..m} $. This lets individual nodes delay initializing the snapshot
-process, preventing a global performance hit to the system.
+To further reduce the impact taking a snapshot has on the system's throughput,
+each node could choose to delay the snapshot process by some amount of time.
+This would ensure that different domains do as little as possible when receiving
+a snapshot marker. Snapshots would still need to happen at \textit{logically} the same
+time, but not in the same \textit{physical} instant across the graph. Simply
+delaying the snapshotting locally at a domain would fail to uphold the former
+however, as processing further updates would mean snapshotting at a different
+logical time. Cloning the state when the snapshot marker arrives would naturally
+solve this, while not getting us any further from the algorithm in listing
+\ref{async-snapshot}.
+
+A clone of the domain's state has to be taken at some point however, but
+preferrably later than when the snapshot marker arrives. To do so we would need
+to be able to go back from a state $ S_m $ to the original state when the marker
+arrived, $ S_n $. With $ L_{n..m} $ signifying the updates that arrived from $ n
+$ to $ m $, $ S_n $ can be re-created through $ S_m - L_{n..m} $. This lets
+individual nodes delay initializing the snapshot process, preventing a global
+performance hit to the system. The amount of work being done by a single domain
+would be higher, as the domain would have to keep track of updates $ L_{n..m} $,
+however the work itself would be spread out over a longer period.
 
 \begin{listing}[H]
   \begin{minted}[frame=single]{python}
-def take_snapshot(self, snapshot_id):
-  for node in self.nodes:
-    if node.is_materialized:
-      cloned_state = node.state.clone()
-      logged_updates = self.logged_updates[node]
-      for update in logged_updates:
-        cloned_state.revert(update)
+TakeSnapshotDelayed:
+  states = {}
+  for node in nodes
+    if node.is_materialized
+      current_state = node.state.clone()
+      states[node] = current_state - processed_updates[node]
 
-      write_snapshot(node, snapshot_id, cloned_state)
-      notify_controller(snapshot_id)
+  snapshot_worker.send(snapshot_id, states)
   \end{minted}
-  \caption{Delayed snapshotting}
+  \caption{
+    A delayed implementation of \texttt{TakeSnapshotAsync} from listing
+    \ref{async-snapshot}. Updates after the marker arrived would need to be stored
+    in \texttt{processed\_updates}.
+  }
 \end{listing}
 
-\subsubsection{Discarding log entries}
+\subsubsection{Snapshot confirmations}
 When a node in the graph eventually snapshots its state, the controller should
-be notified of its completion. The snapshots are already persisted to disk, so
-including the actual data in these messages are unneccessary. They should on the
-other hand include an identifier to the current snapshot request, so that the
-system eventually knows when the entire graph has performed the same snapshot.
-At that point the identifier of the snapshot can be persisted to disk, while
-simultaneously discarding the log prior to the snapshot.
-
-This means that the controller has to maintain a list of which nodes it is still
-waiting for snapshots from, ensuring that it only attempts to discard parts of
-the log after all nodes have successfully persisted a snapshot. It is also
-crucial that the controller persists the current snapshot ID \textit{before} it
-tells the nodes to discard their log entries, ensuring that the system knows
-which snapshot that should be used at the point of recovery.
-
-\begin{listing}[H]
-  \begin{minted}[frame=single]{python}
-def receive_snapshot_ack(self, node_id, snapshot_id):
-  self.node_snapshot_ids[node_id] = snapshot_id
-  # Make sure we only "complete" a snapshot when all nodes
-  # have persisted theirs:
-  if min(self.node_snapshot_ids.values()) < self.snapshot_id:
-    return
-
-  persist_snapshot_id(snapshot_id)
-  for node in self.base_nodes:
-    domain = node.domain()
-    domain.send(packet::DiscardLogs, snapshot_id)
-  \end{minted}
-  \caption{Controller callback for snapshot acknowledgments}
-\end{listing}
-
+be notified of its completion, as shown in \texttt{SnapshotWorker} from listing
+\ref{async-snapshots}. The snapshots are already persisted to disk, so including
+the actual data in these messages are unneccessary. They should on the other
+hand include an identifier to the current snapshot request, so that the system
+eventually knows when the entire graph has performed the same snapshot. At that
+point the identifier of the snapshot can be persisted to disk, and the log
+entries prior to the snapshot being taken can eventually be discarded.
 Recovery is then a matter of first loading each materialized node's state from
 their local snapshot, then replaying the rest of the log entries available.
 
+\begin{listing}[H]
+  \begin{minted}[frame=single]{python}
+ReceiveSnapshotAck(domain_id, snapshot_id):
+  snapshot_ids[domain_id] = snapshot_id
+  if min(snapshot_ids) == snapshot_id
+    persist_snapshot_id(snapshot_id)
+  \end{minted}
+  \caption{
+    The controller listens for snapshot acknowledgments from snapshot
+    workers, updating an internal data structure with a mapping from domain to
+    \texttt{snapshot\_id} on each received confirmation. When all domains have
+    snapshotted, the controller persists the \texttt{snapshot\_id}, so that it
+    later on can be used for recovery.
+    \label{snapshot_acks}
+  }
+\end{listing}
+
 \subsubsection{Failure before discarding the log}
+% TODO: this section is bad
 In the event of a failure \textit{after} the controller has persisted the
 snapshot ID to disk, but \textit{before} all nodes have managed to discard the
 correct log entries from durable storage, duplicate replaying of those log
@@ -701,13 +781,18 @@ entries upon recovery is a possibility.
 
 To prevent this from happening, each log
 entry should include the last snapshot ID the domain successfully discarded.
-When recovering log entries that existed before the latest snapshot can then be
+While recovering, log entries that existed before the latest snapshot can then be
 ignored. This is possible because the system is certain that each domain has an
 available persisted snapshot at this point, as it would not have told it to
 discard log entries otherwise.
 
+\section{Implementing snapshotting in Soup}
+
 \chapter{Results}
+
 \chapter{Discussion}
+\section{Future work}
+\section{Conclusion}
 
 \bibliographystyle{acm}
 \bibliography{sources}
