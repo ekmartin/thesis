@@ -1,8 +1,8 @@
 \documentclass[b5paper]{report}
-
 \usepackage{color}
 \usepackage{xcolor}
 \usepackage{tikz}
+\usepackage{pgfplots}
 \usepackage{graphicx}
 \usepackage{wrapfig}
 \usepackage{svg}
@@ -431,7 +431,7 @@ data from multiple requests into a single unit also means less packets to feed
 through the Soup query graph. The log entries themselves are JSON \cite{json}
 serialized arrays of Soup's data types.
 
-\subsection{Log based recovery}
+\subsection{Log based recovery} \label{sec:log-replay}
 While a persisted log of entries existed ahead of writing this thesis, use of
 these logs for recovery purposes was yet to be implemented. While the final goal
 of this project is snapshot based recovery, the first step was nonetheless to
@@ -827,6 +827,7 @@ snapshot before continuing. After doing so it increments its
 the base node domains in its query graph. Finally, it finishes, without waiting
 for replies or confirmations from the domains it requested a snapshot of.
 
+\clearpage
 \subsection{Snapshotting at domains}
 Whenever a domain receives a \texttt{TakeSnapshot} packet, it creates a cloned
 copy of each of its materialized nodes' states. As shown in
@@ -885,11 +886,153 @@ domain that contains at least one materialized node to their current snapshot
 ID. Note that domains can be sharded, so each instance in the map represents an
 individual shard of a single domain.
 
+\begin{figure}[H]
+  \includesvg[width=\textwidth]{snapshot-id}
+  \caption{
+    The controller keeps track of each domain shard's \texttt{snapshot\_id} as
+    the snapshot confirmations arrive. When all shards have snapshotted, the
+    controller's \texttt{snapshot\_id} is persisted.
+    \label{fig:snapshot-id}
+  }
+\end{figure}
+
 When each shard has completed its snapshot, the current \texttt{snapshot\_id} is
 persisted to disk, allowing the next snapshot to be initiated as described in
 section \ref{sec:snapshot-init}.
 
+\subsection{Logging and snapshotting}
+To be able to discern between log entries created before and after a given snapshot,
+each log entry is annotated with the ID of the last snapshot persisted for that
+specific node. This allows the recovery process to ignore any log entries
+created prior to the snapshot being restored.
+
+\begin{listing}[H]
+  \begin{minted}{json}
+[0, [[{"Positive": [{"Int": 1}, {"Int": 0}]}]],
+[1, [[{"Positive": [{"Int": 1}, {"Int": 1}]}]]]
+[1, [[{"Positive": [{"Int": 1}, {"Int": 2}]}]]]
+  \end{minted}
+  \caption{
+    Separate log lines for a given base node. Each line is on the format shown
+    in listing \ref{lst:log-entry}, with the addition of a prefixed
+    \texttt{snapshot\_id}.
+  }
+\end{listing}
+
+Note that the snapshot ID used by each domain in the log process is the ID of
+the latest snapshot that was taken at that domain, even if the global snapshot
+with that ID has not been persisted yet - it is \textit{optimistic}. In the
+event of a failure before the entire graph manages to create a snapshot with
+that ID, it will simply not be used during the recovery process. As an example,
+consider a domain that is in the process of taking a snapshot with ID $ X $. A
+failure occuring after that domain has snapshotted, but before the entire graph
+has done so, would lead to each domain recovering the snapshot with ID $ X - 1
+$, while ignoring all log entries with $ snapshot\_id < X - 1 $.
+
+\subsection{Recovering from a snapshot}
+Snapshot recovery comes in addittion to the log based recovery described in
+section \ref{sec:log-replay}. It is initialized when the controller sends a
+\texttt{StartRecovery} packet to each of its base node domains, containing the
+ID of the snapshot that was last persisted across the entire query graph. This
+ID is read from persisted storage by the controller, ensuring that it survives
+across failures.
+
+When the base node domains receive the recovery packets, they initialize the
+recovery process by restoring snapshots, followed by replaying the log entries
+for the rest of the updates. The domain first forwards the recovery packet on to
+the rest of the graph however, as unlike with log based replays, snapshots have
+to be restored at each materialized node across the graph - not solelyat the base
+nodes. It is crucial that the recovery packet is forwarded \textit{before} a
+base node starts replaying log entries, ensuring that snapshot recovery happens
+ahead of log based recovery across the entire graph.
+
+\subsection{Serialization and deserialization of snapshots}
+Snapshots are serialized and deserialized representations of each node's
+materialized state. The state itself is serialized from its Rust representation
+to a series of bytes using the \texttt{bincode} \cite{bincode} library, as shown
+in listing \ref{lst:bincode}.
+
+\begin{listing}[H]
+  \begin{minted}{rust}
+// Implementing the Serialize and Deserialize traits makes it
+// possible for bincode to serialize and deserialize the State struct:
+#[derive(Clone, Serialize, Deserialize)]
+pub struct State<T: Hash + Eq + Clone + 'static> {
+    state: Vec<SingleState<T>>,
+    by_tag: HashMap<Tag, usize>,
+    rows: usize,
+}
+
+// Serialization:
+let file = File::create(&filename)
+  .expect(&format!("Failed creating snapshot file: {}", filename));
+let mut writer = BufWriter::new(file);
+bincode::serialize_into(&mut writer, &state, bincode::Infinite)
+  .expect("bincode serialization of snapshot failed");
+
+// And deserialization:
+let file = File::open(&filename)
+  .expect(&format!("Failed reading snapshot file: {}", filename));
+let mut reader = BufReader::new(file);
+bincode::deserialize_from(&mut reader, bincode::Infinite)
+  .expect("bincode deserialization of snapshot failed")
+  \end{minted}
+  \caption{
+    State is serialized and deserialized using \texttt{bincode} \cite{bincode}.
+    \label{lst:bincode}
+  }
+\end{listing}
+
+\subsection{Persisted files}
+
 \chapter{Results}
+
+\begin{figure}
+  \begin{tikzpicture}
+    \begin{loglogaxis}[
+      xlabel={Recovery Time [ms]},
+      ylabel={Rows},
+      xmin=0, xmax=40000,
+      ymin=0, ymax=51200000,
+      ymajorgrids=true,
+      legend pos=north west,
+      grid style=dashed,
+      cycle list name=color
+    ]
+
+      \addplot
+      coordinates {
+        (77, 100000)
+        (159, 200000)
+        (333, 400000)
+        (620, 800000)
+        (1335, 1600000)
+        (2277, 3200000)
+        (4486, 6400000)
+        (8905, 12800000)
+        (19089, 25600000)
+        (38482, 51200000)
+      };
+      \addlegendentry{Log Recovery}
+
+      \addplot
+      coordinates {
+        (35, 100000)
+        (67, 200000)
+        (131, 400000)
+        (262, 800000)
+        (542, 1600000)
+        (1038, 3200000)
+        (1984, 6400000)
+        (3673, 12800000)
+        (7238, 25600000)
+        (14897, 51200000)
+      };
+      \addlegendentry{Snapshot Recovery}
+
+    \end{loglogaxis}
+  \end{tikzpicture}
+\end{figure}
 
 \chapter{Discussion}
 \section{Future work}
