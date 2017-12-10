@@ -986,14 +986,100 @@ bincode::deserialize_from(&mut reader, bincode::Infinite)
 \subsection{Persisted files}
 
 \chapter{Results}
+Soup is just as durable with log based recovery as it is with snapshotting. The
+primary motivation behind the latter is thus to reduce the time spent recovering
+from a failure. At the same time snapshotting works in addition to log based
+replay, and would normally not be used as a replacement for it. This comes with
+an extra amount of overhead compared to simply persisting log entries, which
+leads to a trade-off and dilemma: what is the threshold for snapshot induced
+overhead, and how much of an improvement in recovery time do we need to see for
+it to be worth it?
 
-\begin{figure}
+\section{Benchmarking Setup} \label{sec:vote}
+The results presented in this chapter are gathered using the same benchmark
+setup: a Soup instance running a user-curated news aggregating
+application, with a schema containing two base tables, Articles and Votes. Each vote
+represents a relation between an imaginary user and an article. The system
+presents clients with a single query, \texttt{AritcleWithVoteCount}, which
+retrieves each article with its respective vote count.
+
+\begin{listing}[H]
+  \begin{minted}[frame=lines]{sql}
+CREATE TABLE Article (id int, title varchar(255), PRIMARY KEY(id));
+CREATE TABLE Vote (article_id int, user_id int);
+
+QUERY ArticleWithVoteCount:
+  SELECT Article.id, title, VoteCount.votes AS votes
+    FROM Article
+    LEFT JOIN (
+      SELECT article_id, COUNT(user_id) AS votes
+      FROM Vote
+      GROUP BY article_id)
+    AS VoteCount
+    ON (Article.id = VoteCount.article_id) WHERE Article.id = ?;
+\end{minted}
+  \caption{
+    The two base tables and the query used in the benchmarking setup.
+    \label{lst:benchmark-schema}
+  }
+\end{listing}
+
+\subsection{Hardware}
+The benchmarks are run on an IBM System x3550 M4 server, with an Intel Xeon
+E5-2620 CPU, containing 6 physical and 12 logical cores running at 2GHz. The machine
+has 64GB of 1600MHz DDR3 RAM, and two 15,000 RPM SAS disks running in RAID-1.
+
+\section{Recovery Benchmark}
+The first benchmark measures the amount of time it would take for our news
+aggregation application to recover from scratch. To do so it populates the
+database with a set of articles and votes, then measures the time it
+would take to recover the database's state after a total failure.
+
+While a real Soup application first would recover using a set of snapshots, then
+replay the log entries from the updates that happened after that, the recovery
+benchmark is restricted to using only one of the methods in isolation. With
+only log entries it recovers by replaying each of the updates from before the
+induced failure, whereas it with snapshots simply restores each node's snapshot
+without replaying any logs. The benchmark creates snapshots only after all
+updates have been propagated through the system, ensuring that the two recovery
+methods both restore the application to the same state.
+
+\subsection{Recovery Metrics}
+Two metrics are measured, initial and total recover time. The former states how
+long the recover command sent by the controller will block, while the latter
+describes the total amount of time needed for all recovery updates to propagate
+through the system.
+
+The difference between the two comes as a result of the way Soup's query graph
+is built up. While updates are processed synchronously in a single-threaded
+manner at each domain, packets propagate between domains' ingress and egress
+nodes asynchronously. Recovering using only log entries will cause the
+controller to block until each of its base nodes have processed the entire log,
+but not until the recovery updates have propagated through the rest of the graph.
+This results in a gap in consistency from when the recovery command returns, and
+until the readers start serving fresh data.
+
+Snapshots are taken at each materialized node across the entire query
+graph, meaning that as long as the time it takes to restore a snapshot at a node
+is less than the time it would take to replay each update contained in that
+snapshot, this gap should be significantly shorter with snapshots than with only
+log based recovery. The same logic also holds for the intitial recovery time: if
+the system spends less time restoring the base nodes' snapshots than it would
+replaying log entries, snapshot based recovery should be fundamentally faster.
+
+The results from the benchmark confirms these two notions. With only snapshots,
+the initial recovery time is about 40\% of time spent recovering from a log.
+The difference in total time is even more drastic, where snapshot recovery
+spends less than 10\% of the time log based recovery does.
+
+\begin{figure}[H]
+  \centering
   \begin{tikzpicture}
     \begin{loglogaxis}[
       xlabel={Recovery Time [ms]},
-      ylabel={Rows},
-      xmin=0, xmax=40000,
-      ymin=0, ymax=51200000,
+      ylabel={Number of votes},
+      xmin=0, xmax=18000,
+      ymin=0, ymax=52000000,
       ymajorgrids=true,
       legend pos=north west,
       grid style=dashed,
@@ -1013,7 +1099,7 @@ bincode::deserialize_from(&mut reader, bincode::Infinite)
         (19089, 25600000)
         (38482, 51200000)
       };
-      \addlegendentry{Log Recovery}
+      \addlegendentry{Log Recovery (initial)}
 
       \addplot
       coordinates {
@@ -1028,11 +1114,129 @@ bincode::deserialize_from(&mut reader, bincode::Infinite)
         (7238, 25600000)
         (14897, 51200000)
       };
-      \addlegendentry{Snapshot Recovery}
+      \addlegendentry{Snapshot Recovery (initial)}
 
     \end{loglogaxis}
   \end{tikzpicture}
+
+  \begin{tikzpicture}
+    \begin{loglogaxis}[
+      xlabel={Recovery Time [ms]},
+      ylabel={Number of votes},
+      xmin=0, xmax=18000,
+      ymin=0, ymax=52000000,
+      ymajorgrids=true,
+      legend pos=north west,
+      grid style=dashed,
+      cycle list name=color
+    ]
+
+      \addplot
+      coordinates {
+        (260, 100000)
+        (574, 200000)
+        (1166, 400000)
+        (2325, 800000)
+        (4768, 1600000)
+        (9700, 3200000)
+        (19735, 6400000)
+        (39896, 12800000)
+        (84425, 25600000)
+        (173515, 51200000)
+      };
+      \addlegendentry{Log Recovery (total)}
+
+      \addplot
+      coordinates {
+        (46, 100000)
+        (91, 200000)
+        (174, 400000)
+        (335, 800000)
+        (707, 1600000)
+        (1319, 3200000)
+        (2521, 6400000)
+        (4738, 12800000)
+        (9622, 25600000)
+        (17947, 51200000)
+      };
+      \addlegendentry{Snapshot Recovery (total)}
+
+    \end{loglogaxis}
+  \end{tikzpicture}
+
+  \caption{
+    The two graphs show the initial and total recovery time for recovery based
+    on only log entries, and only snapshots.
+  }
 \end{figure}
+
+\section{Write Throughput Benchmark}
+The previous section shows that snapshot recovery outperforms log based recovery
+in the time it takes to recover from a complete failure. While this is without
+doubt a useful property, keeping Soup's runtime performance as high as possible
+still has higher priority. To measure the performance penalty induced by
+snapshotting, a write throughput benchmark is used.
+
+This runs the same news-aggregation application described in section
+\ref{sec:vote}, but instead of measuring the time it takes to recover, we benchmark
+the total amount of writes our database is able to handle per second: the write
+throughput. This is measured using different snapshot timeouts \footnote{The
+amount of time the controller waits before starting a new snapshot.}, and
+compared to the baseline of using no snapshotting at all. Unless otherwise
+specified, Soup runs with two worker threads, a single client thread and each
+domain is sharded into two separate shards.
+
+\begin{figure}
+  \centering
+  \begin{tikzpicture}
+    \begin{axis}[
+      xlabel={Snapshot Timeout [seconds]},
+      ylabel={Throughput [writes per second]},
+      xmin=5, xmax=30,
+      ymin=2700000, ymax=3500000,
+      ymajorgrids=true,
+      legend pos=south east,
+      grid style=dashed,
+      cycle list name=color
+    ]
+
+      \addplot[mark=none, black]
+        coordinates {(5, 3082904) (30, 3082904)};
+      \addlegendentry{Baseline}
+
+      \addplot
+        coordinates {
+          (5, 2998202)
+          (10, 3024990)
+          (15, 3031589)
+          (20, 3023254)
+          (25, 3030454)
+          (30, 3014442)
+        };
+      \addlegendentry{With Snapshots}
+    \end{axis}
+  \end{tikzpicture}
+
+  \caption{
+    Write throughput measured with different snapshot timeouts.
+    \label{fig:throughput}
+  }
+\end{figure}
+
+The graph in figure \ref{fig:throughput} shows a slight decrease in throughput
+of about 2\% from the baseline when snapshotting is introduced. Different
+snapshot timeouts do not make much of a difference at all however, which
+highlights that the bulk of the work performed during a snapshot is done by the
+snapshot worker, and is most likely bound by I/O. As long as the machine has
+enough cores to keep the snapshot worker from competing with the rest of the
+system, an increased amount of work for the separate snapshotting thread should
+not make much of a difference. As we are running the benchmark with two Soup
+workers and one write client, that leaves an ample amount of cores left for the
+snapshot worker on our 6 core benchmarking machine.
+
+To simulate a situation where that is not the case, where the very existance of
+the snapshotting worker would cause a performance hit to the rest of the system,
+we increase the amount of client threads writing to our database in parallel.
 
 \chapter{Discussion}
 \section{Future work}
