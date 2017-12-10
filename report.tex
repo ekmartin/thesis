@@ -1,4 +1,5 @@
-\documentclass[a4paper]{report}
+\documentclass[b5paper]{report}
+\usepackage[lmargin=25mm,rmargin=25mm,tmargin=27mm,bmargin=30mm]{geometry}
 \usepackage{color}
 \usepackage{xcolor}
 \usepackage{tikz}
@@ -25,41 +26,62 @@
 \input{macros.tex}
 
 \begin{abstract}
-  Abstract
+  Growing performance demands in today's web applications have lead to developers
+  introducing complex cache hierarchies to deal with poor read performance in
+  traditional database systems. Soup is a new and highly scalable database system
+  that sets out to remove the need for these caching solutions, providing
+  impressive read performance right out of the box even for complex queries,
+  without the downsides of having to manually invalidate cached data.
+
+  Soup achieves this by building up and maintaining a data-flow graph, avoiding
+  the need to manually maintain materialized views. By adapting the graph to
+  schema changes on-the-fly, Soup avoids the substantial downtime that
+  comes with migrations in traditional relational database management systems.
+
+  Utilizing a group-commit protocol, Soup persists all base table writes to a
+  log on durable storage before propagating changes throughout the graph.
+  Recovery is based on replaying the semantic updates from its logs, which
+  naturally leads to gradually increasing recovery times as a database acquires
+  more data. Checkpointing by taking a snapshot of the database's current state
+  is a common way to solve this issue, reducing the size of the log at the same
+  time. This is not trivial in Soup however, where the data is spread across
+  materializations in the data-flow graph, and updates are propagated through
+  the graph asynchronously without timestamps.
+
+  This thesis approaches the problem of creating a logically consistent snapshot
+  across Soup's data-flow graph by utilizing snapshotting techniques common in
+  distributed systems, considering each node in Soup's query graph as a single
+  node in a distributed setting. Initial results are promising, and shows an
+  overall reduction in recovery time of 90\% compared to log based recovery,
+  without a significant impact on the running system's write throughput.
 \end{abstract}
 
 \tableofcontents
 \pagebreak
 
 \chapter{Introduction}
-Soup is a high-performance database system developed at the Parallel and
-Distributed Operating System group at MIT CSAIL. Soup builds up and maintains a
-data-flow graph, avoiding the need to manually maintain materialized views. By
-adapting the graph to schema changes on-the-fly, Soup avoids the substantial
-downtime that comes with migrations in traditional relational database
-management systems.
+Soup is developed at the Parallel and Distributed Operating System group at
+MIT CSAIL \cite{soup-web}. The latest prototype of the system is implemented using
+the Rust programming language and is freely available with a permissive license
+on GitHub \cite{distributary}.
 
-Utilizing a group-commit protocol, Soup persists all base table writes to
-a log on durable storage before propagating changes throughout the graph.
-Recovery is based on replaying the semantic updates in this log, which naturally
-leads to gradually increasing recovery times as a database acquires more data.
-Checkpointing by taking a snapshot of the database's current state is a common
-way to solve this issue, reducing the size of the log at the same time. This is
-not trivial in Soup however, where the data is spread across materializations in
-the data-flow graph, and updates are propagated through asynchronously without
-timestamps.
+This thesis implements support for log based recovery in Soup, utilizing
+the system's existing log infrastructure. It then primarily focuses on snapshot
+recovery, investigating different options for snapshotting, until finally
+implementing one of them.
 
-This thesis approaches the problem of creating a logically consistent snapshot
-across Soup's data-flow graph by comparing it to a distributed system, where
-each node in the graph can be seen as a node in a distributed setting. Soup as a
-system is introduced in Chapter 2, whereas Chapter 3 looks at and compares
-recovery solutions in different database systems before going into more detail
-regarding Soup's solution for recovery. Then, various solutions for
-snapshotting in distributed systems are investigated, while parallels to Soup's
-own data-flow graph are drawn. Finally, a method for snapshotting in Soup is
-proposed, implemented and compared to the baseline of only log based recovery.
+Chapter \ref{chap:background} introduces Soup as a system, together with a few
+commonly utilized techniques for recovery in main-memory databases and a brief
+introduction to the Rust programming language. Chapter \ref{chap:methodology}
+presents the implemented solution for log based recovery, followed by gradually
+building up a snapshotting algorithm compatible with Soup. This algorithm is
+then implemented, and its performance is inspected in chapter
+\ref{chap:results}.
 
-\chapter{Background}
+Finally, chapter \ref{chap:discussion} looks at a few possible areas for
+improvement, while drawing conclusions regarding the covered recovery methods.
+
+\chapter{Background} \label{chap:background}
 \section{Soup}
 Modern web applications face an increasingly difficult performance problem in
 relation to their storage needs: traditional relational databases perform too
@@ -86,6 +108,24 @@ removing the need for manual materialization altogether. The current prototype
 scales to millions of writes and reads per second \cite{soup}, and works both on
 a single machine and in a distributed setting.
 
+\begin{figure}
+  \centering
+  \includegraphics[width=\textwidth]{read}
+  \caption{
+    Soup (here: Phloem) outperforms even the popular caching
+    system memcached on read-heavy (95\% reads) workloads.
+  }
+\end{figure}
+
+\begin{figure}
+  \centering
+  \includegraphics[width=\textwidth]{mixed}
+  \caption{
+    Soup (here: Phloem) still holds up well when faced with a 50\%-50\% mixed
+    workload.
+  }
+\end{figure}
+
 Soup does this by materializing data automatically in a data-flow
 graph, building on existing streaming data-flow research \cite{naiad, dataflow}
 by combining it with ideas from performant materialized view solutions
@@ -110,7 +150,7 @@ The query graph includes at least one materialized node per pre-defined query,
 located at the bottom of the graph as leaf nodes. This means that reading from
 the system is a matter of finding the relevant leaf node, and retrieving data
 from the node's materialized storage. This is one of the elements that makes Soup
-resemble more of a key-vaule store than a traditional RDBMS. Even though Soup
+resemble more of a key-value store than a traditional RDBMS. Even though Soup
 supports advanced SQL queries, both mutations and retrievals are done with a
 key, which then maps to a corresponding value.
 
@@ -204,7 +244,7 @@ keys can be evicted after a period of inactivity.
 
 \subsection{Migrations}
 Relational databases require developers to pre-define a set of table schemas for
-their application. Changes to these throughout a project's lifecycle are often
+their application. Changes to these throughout a project's life cycle are often
 inevitable, however the process of performing migrations in a live
 system without downtime is usually far from trivial \cite{stripe}. This is one
 of the core issues Soup sets out to solve, by providing a database system that
@@ -219,7 +259,7 @@ requests for the newly defined query right away, by only fetching each key from
 ancestor nodes when necessary. For fully materialized nodes, Soup will replay
 all relevant base table writes from the closest materialized node. This
 delays the point where Soup can start processing requests, but has the advantage
-of not delaying subsequent requests to retrieve materializated keys later on.
+of not delaying subsequent requests to retrieve materialized keys later on.
 
 Modifications to base table schemas are done in-place, by having Soup's base
 nodes internally include the full history of columns for that specific table.
@@ -230,7 +270,7 @@ An increasing amount of real-world database system users have found relaxed
 consistency guarantees to be sufficient in the last few years, as it greatly
 simplifies the problem of replicating large amounts of data across data centers
 with high performance \cite{existential}. There are nonetheless without doubt
-a wide variety of usecases for transactions, where the eventual consistency that
+a wide variety of use cases for transactions, where the eventual consistency that
 Soup offers is insufficient. To cater to these types of applications, Soup
 allows developers to opt-in for transaction support, by defining their base
 nodes as transactional.
@@ -241,7 +281,7 @@ timestamped tokens for reads, which can later be used to verify the validity of
 the data that was read. Writes can only be performed at the end of a
 transaction, when clients request their transactions to be committed. The
 timestamp part of the token helps Soup validate if concurrent clients
-interferred with the data, which lets the system notify the client by aborting
+interfered with the data, which lets the system notify the client by aborting
 the ongoing transaction.
 
 \subsection{Example} \label{example}
@@ -258,7 +298,6 @@ output query in the example counts the number of votes for a specific article,
 through a \texttt{JOIN} between the two tables.
 
 \begin{listing}[H]
-  \vspace*{-1.1in}
   \begin{minted}[frame=lines, linenos]{rust}
 let sql = "
     # Base tables:
@@ -314,7 +353,7 @@ println!("Vote Count: {:?}", vote_count.lookup(&aid.into(), true))
 \section{Recovery} \label{aries}
 At the core of most database systems you will find a log manager, which
 maintains a sequence of log records on disk. Logging is essential in maintaining
-fault tolerancy and durability, and is used for a variety of issues: ensuring
+fault tolerance and durability, and is used for a variety of issues: ensuring
 the durability of committed data, recovering from failures, and rolling back
 aborted transactions.
 
@@ -356,7 +395,7 @@ operation. Because of this some main memory systems also rely on so-called
 K-safety, where data is replicated to K+1 replicas \cite{early-voltdb},
 ensuring that the system could survive up to K failing nodes and still maintain
 full durability. K-safety is because of this naturally sensitive to total
-failures, where for example entire data centres fail.
+failures, where for example entire data centers fail.
 
 A third alternative is maintaining a log of actions, which in VoltDB is referred
 to as command logging \cite{voltdb-recovery}. Whereas a fine-grained system like
@@ -369,7 +408,7 @@ data.
 
 With only a coarse-grained command log, recovery times would steadily increase
 as an application gains more data, as all log entries would have to be processed
-during recovery to reach the system's previous state. This is infeasible, and
+during recovery to reach the system's previous state. This is unfeasible, and
 systems like VoltDB opt for checkpointing as a way of minimizing the size of the
 log that has to be replayed during recovery. VoltDB is not unique here though, and
 a plethora of different checkpointing solutions exists in today's selection of
@@ -400,12 +439,12 @@ fn main() {
 \end{listing}
 
 When choosing a language, developers are often forced to compromise between
-higher level abstractions and performance. Large and latency sensitivy projects
+higher level abstractions and performance. Large and latency sensitivity projects
 like databases often opt for the latter through low-level languages like C,
 which avoid expensive runtime safety checks. Rust removes this dilemma
 altogether by providing developers with both the fine-tuned control and
 performance they are used to in low-level languages, while offering abstractions
-developers might be familiar with from interepretted languages.
+developers might be familiar with from interpreted languages.
 
 One of Rust's key features is providing compile time safety both in terms of
 types and memory. The latter is done through an ownership model which lets
@@ -414,9 +453,9 @@ deallocation, without the lowered performance of using something like a garbage
 collector. Each variable in Rust is assigned one and only one owner, and the
 variable is deallocated - or dropped - when that owner goes out of scope.
 
-\chapter{Methodology}
+\chapter{Methodology} \label{chap:methodology}
 
-\section{Logging in Soup}
+\section{Logging in Soup} \label{sec:logging}
 Soup only logs entries from committed transactions, greatly simplifying the
 recovery protocol. The log is written prior to entries being forwarded
 through the query graph, which makes sure that all changes are persisted to disk
@@ -503,13 +542,13 @@ makes sure that the system's recovery time remains manageable.
 
 Snapshotting a running Soup instance's entire state is not trivial however.
 Main memory systems like VoltDB leverage checkpointing by persisting the
-transactional state of commmitted transactions, using log sequence numbers to be
+transactional state of committed transactions, using log sequence numbers to be
 able to track which updates have been reflected on disk \cite{voltdb-recovery}.
 In Soup, state is materialized at a variety of nodes throughout the query graph,
 and updates have no timestamps or sequence numbers attached to them. Updates
 also propagate through the graph asynchronously, and a specific update is likely
 to reach different points in the graph at separate times. Taking a global
-snapshot of the entire graph simulatenously would thus mean capturing nodes at
+snapshot of the entire graph simultaneously would thus mean capturing nodes at
 different logical points, as an update might be in the process of propagating
 throughout the graph at the time that the snapshot is initiated.
 
@@ -540,7 +579,7 @@ these messages can be sent out in parallel, the time to complete a snapshot is
 \textit{O(d)}, where \textit{d} is the diameter of the graph.
 
 Lai and Yang \cite{lai-yang} later extend this scheme with support for non-FIFO
-channels, which obleviates the need for explicit control messages by piggy-backing
+channels, which removes the need for explicit control messages by piggy-backing
 the required information onto existing messages.
 
 \subsection{Snapshotting algorithm}
@@ -556,7 +595,7 @@ few base rules for our snapshotting algorithm:
 \begin{enumerate}
   \item Each node's snapshot needs to include exactly the same updates across
     the graph.
-  \item Taking a snapshot of the system should not signifantly degrade its
+  \item Taking a snapshot of the system should not significantly degrade its
     throughput.
   \item Snapshots should complete in a reasonable amount of time.
 \end{enumerate}
@@ -602,7 +641,7 @@ even if snapshots are taken at different physical points in time.
   \includesvg[width=0.6\textwidth]{good-example}
   \caption{
     Similar to the partial query graph in figure \ref{bad-example}, an update
-    \texttt{A} is propating through the graph. This time it is followed by a
+    \texttt{A} is propagating through the graph. This time it is followed by a
     snapshot marker however, which makes sure that domains with materialized
     nodes only snapshot when they receive the marker.
     \label{good-example}
@@ -629,10 +668,10 @@ InitializeSnapshot:
   persist(snapshot_id)
   \end{minted}
 
-  \caption{Initating a snapshot from the controller.}
+  \caption{Initiating a snapshot from the controller.}
 \end{listing}
 
-Domains that receive the snapshop marker proceed to initialize the
+Domains that receive the snapshot marker proceed to initialize the
 snapshotting process. After persisting a snapshot, the nodes notify the
 controller that they have done so, letting it eventually discard log entries
 when it has confirmed that all materialized nodes have created a snapshot with
@@ -691,7 +730,7 @@ TakeSnapshotAsync:
   }
 \end{listing}
 
-\subsubsection{Delayed snapshotting}
+\subsubsection{Delayed snapshotting} \label{sec:delay-snapshot}
 Now the domain only needs to block while performing a clone of its nodes' state
 - an improvement. At this point our algorithm still creates snapshots at roughly
 the same point across the graph however, which means that the load induced by
@@ -717,7 +756,7 @@ solve this, while not getting us any further from the algorithm in listing
 \ref{async-snapshot}.
 
 A clone of the domain's state has to be taken at some point however, but
-preferrably later than when the snapshot marker arrives. To do so we would need
+preferably later than when the snapshot marker arrives. To do so we would need
 to be able to go back from a state $ S_m $ to the original state when the marker
 arrived, $ S_n $. With $ L_{n..m} $ signifying the updates that arrived from $ n
 $ to $ m $, $ S_n $ can be re-created through $ S_m - L_{n..m} $. This lets
@@ -748,7 +787,7 @@ TakeSnapshotDelayed:
 When a node in the graph eventually snapshots its state, the controller should
 be notified of its completion, as shown in \texttt{SnapshotWorker} from listing
 \ref{async-snapshot}. The snapshots are already persisted to disk, so including
-the actual data in these messages are unneccessary. They should on the other
+the actual data in these messages are unnecessary. They should on the other
 hand include an identifier to the current snapshot request, so that the system
 eventually knows when the entire graph has performed the same snapshot. At that
 point the identifier of the snapshot can be persisted to disk, and the log
@@ -861,7 +900,7 @@ from in slightly different ways.
 
 \subsection{Performing snapshot requests}
 While each domain is responsible for gathering up the cloned copies of state
-needed to eventaully recover from a failure, the actual serialization and
+needed to eventually recover from a failure, the actual serialization and
 persisting of snapshots happens in separate snapshot workers. The current
 implementation runs one of these per worker pool, resulting in one thread
 per running Soup instance. This could be increased as needed, but it is
@@ -880,7 +919,7 @@ domain's snapshot completion.
 \subsection{Receiving snapshot confirmations}
 The controller listens for snapshot confirmations on a TCP socket normally used
 for coordination messages between the controller and its individual Souplet
-workers. Whenever it receives an acknowledgement packet from a snapshot worker,
+workers. Whenever it receives an acknowledgment packet from a snapshot worker,
 it stores the given \texttt{snapshot\_id} in a \texttt{HashMap} mapping each
 domain that contains at least one materialized node to their current snapshot
 ID. Note that domains can be sharded, so each instance in the map represents an
@@ -925,12 +964,12 @@ with that ID has not been persisted yet - it is \textit{optimistic}. In the
 event of a failure before the entire graph manages to create a snapshot with
 that ID, it will simply not be used during the recovery process. As an example,
 consider a domain that is in the process of taking a snapshot with ID $ X $. A
-failure occuring after that domain has snapshotted, but before the entire graph
+failure occurring after that domain has snapshotted, but before the entire graph
 has done so, would lead to each domain recovering the snapshot with ID $ X - 1
 $, while ignoring all log entries with $ snapshot\_id < X - 1 $.
 
 \subsection{Recovering from a snapshot}
-Snapshot recovery comes in addittion to the log based recovery described in
+Snapshot recovery comes in addition to the log based recovery described in
 section \ref{sec:log-replay}. It is initialized when the controller sends a
 \texttt{StartRecovery} packet to each of its base node domains, containing the
 ID of the snapshot that was last persisted across the entire query graph. This
@@ -941,12 +980,12 @@ When the base node domains receive the recovery packets, they initialize the
 recovery process by restoring snapshots, followed by replaying the log entries
 for the rest of the updates. The domain first forwards the recovery packet on to
 the rest of the graph however, as unlike with log based replays, snapshots have
-to be restored at each materialized node across the graph - not solelyat the base
+to be restored at each materialized node across the graph - not solely at the base
 nodes. It is crucial that the recovery packet is forwarded \textit{before} a
 base node starts replaying log entries, ensuring that snapshot recovery happens
 ahead of log based recovery across the entire graph.
 
-\subsection{Serialization and deserialization of snapshots}
+\subsection{Serialization and deserialization of snapshots} \label{sec:bincode}
 Snapshots are serialized and deserialized representations of each node's
 materialized state. The state itself is serialized from its Rust representation
 to a series of bytes using the \texttt{bincode} \cite{bincode} library, as shown
@@ -1022,7 +1061,7 @@ specific file, on the format \texttt{\{prefix\}-snapshot\_id}. This file is read
 during recovery, when the controller decides which snapshot the graph as a whole
 should recover from.
 
-\chapter{Results}
+\chapter{Results} \label{chap:results}
 Soup is just as durable with log based recovery as it is with snapshotting. The
 primary motivation behind the latter is thus to reduce the time spent recovering
 from a failure. At the same time snapshotting works in addition to log based
@@ -1100,7 +1139,7 @@ Snapshots are taken at each materialized node across the entire query
 graph, meaning that as long as the time it takes to restore a snapshot at a node
 is less than the time it would take to replay each update contained in that
 snapshot, this gap should be significantly shorter with snapshots than with only
-log based recovery. The same logic also holds for the intitial recovery time: if
+log based recovery. The same logic also holds for the initial recovery time: if
 the system spends less time restoring the base nodes' snapshots than it would
 replaying log entries, snapshot based recovery should be fundamentally faster.
 
@@ -1272,13 +1311,166 @@ not make much of a difference. As we are running the benchmark with two Soup
 workers and one write client, that leaves an ample amount of cores left for the
 snapshot worker on our 6 core benchmarking machine.
 
-To simulate a situation where that is not the case, where the very existance of
-the snapshotting worker would cause a performance hit to the rest of the system,
-we increase the amount of client threads writing to our database in parallel.
+\begin{figure}[H]
+  \centering
+  \begin{tikzpicture}
+    \begin{axis}[
+      xlabel={Parallel writers},
+      ylabel={Throughput [writes per second]},
+      xmin=0, xmax=15,
+      ymin=2500000, ymax=16000000,
+      ymajorgrids=true,
+      legend pos=north west,
+      grid style=dashed,
+      cycle list name=color
+    ]
 
-\chapter{Discussion}
+      \addplot
+        coordinates {
+          (1, 3080338)
+          (2, 3587710)
+          (3, 4177352)
+          (4, 4823293)
+          (5, 5503124)
+          (6, 6293291)
+          (7, 7288722)
+          (8, 8198386)
+          (9, 9158605)
+          (10, 10288560)
+          (11, 10653890)
+          (12, 11908573)
+          (13, 12660808)
+          (14, 13945689)
+          (15, 14649264)
+        };
+      \addlegendentry{Without Snapshots}
+
+      \addplot
+        coordinates {
+          (1, 3023907)
+          (2, 3462748)
+          (3, 4134574)
+          (4, 4796998)
+          (5, 5537801)
+          (6, 6522862)
+          (7, 7286319)
+          (8, 8172271)
+          (9, 9036599)
+          (10, 10193642)
+          (11, 10877274)
+          (12, 11556775)
+          (13, 12722205)
+          (14, 13217942)
+          (15, 14716467)
+        };
+      \addlegendentry{With Snapshots (10s timeout)}
+    \end{axis}
+  \end{tikzpicture}
+
+  \caption{
+    Write throughput measured with different snapshot timeouts.
+    \label{fig:throughput}
+  }
+\end{figure}
+
+To simulate a situation where that is not the case, where the snapshot worker
+would have to compete with the rest of the worker threads for CPU cores, we
+increase the amount of client threads writing to our database in parallel. The
+result is shown in figure \ref{fig:throughput}, which gradually increases the
+amount of writers and compares the throughput with no snapshots against the
+throughput of snapshotting every 10th second. The results here are similar to
+our previous throughput benchmark: introducing snapshotting reduces the
+throughput ever so slightly, but the reduction is far from significant.
+
+\chapter{Discussion} \label{chap:discussion}
 \section{Future work}
+While the snapshotting solution presented in this thesis serves well as an
+initial demonstration of the concept, there are ways to go before it can be
+considered optimal. Future iterations will most likely diverge into two paths:
+optimizing each individual snapshot, and improving the overall snapshotting
+method itself.
+
+\subsection{Snapshot Compression}
+A significant portion of the work being done while taking a snapshot will always
+be bound by the performance of the storage medium the snapshot is read from or
+persisted to. Compressing snapshots before they are persisted to disk would
+naturally lower the amount of raw bytes being persisted, at the expense of
+actually having to compress the data before doing so.
+
+\subsection{Snapshot Serialization}
+The current snapshot implementation utilizes bincode \cite{bincode} to serialize
+and deserialize a node's state into and from a file, as described in section
+\ref{sec:bincode}. There are a myriad of serialization formats that can be
+compared across different factors, such as encoding and decoding time and
+storage space usage.
+
+\subsection{Persisting snapshots to remote storage}
+Snapshots are currently persisted locally, and the controller is notified of
+each snapshot's completion through a separate communication channel. An
+alternative would be to persist each snapshot directly to a remote distributed
+file system, removing the need for explicit acknowledgment messages sent from
+the snapshot workers to the controller: it could simply check the same remote
+file system to see if each domain's snapshot was completed.
+
+This comes with a specific performance trade-off, as snapshots would have to be
+read from a remote file system during recovery. For something that is already
+quite heavily impacted by the underlying storage system's performance
+characteristics, decreasing the reading capability by moving to a remote, and
+most likely slower, file system could have a significant impact on the time
+spent recovering from a failure.
+
+\begin{figure}[H]
+  \includesvg[width=\textwidth]{remote-fs}
+  \caption{
+    Snapshots could be persisted to a remote file system: either directly from
+    each domain or from a snapshot worker.
+  }
+\end{figure}
+
+On the other hand, storing snapshots in an accessible remote file system might
+come with useful properties unrelated to performance. Instead of forcing domains
+to recover at the same location as where the failure happened, Soup could make
+use of the remote file system to be able to shuffle nodes around at different
+machines. This would also require changes to the log system however, as the
+current system also stores each node's log locally.
+
+\subsection{Log Recovery Improvements}
+Although this thesis has had a focus on snapshot recovery so far, regular
+replaying of log entries is an important part of the recovery process in Soup.
+The current implementation serializes log entries using JSON, as described in
+section \ref{sec:logging}, and a more efficient serialization format might
+perform better.
+
+\subsection{Asynchronous Snapshots}
+The current snapshot implementation requires global coordination across the
+graph to perform a snapshot. As described in section \ref{sec:delay-snapshot},
+this requires additional, and possibly complex, measures to prevent slowing down
+the system as a result of snapshotting the entire graph simultaneously. However,
+if nodes were free to snapshot at any point in time, snapshotting work would
+naturally spread out across the graph. This would also significantly reduce the
+complexity of our algorithm, as the snapshot workers would no longer have to
+send confirmations to the controller after performing the snapshot: the
+controller should instead be able to piece together the latest total snapshot
+during recovery.
+
 \section{Conclusion}
+Throughout this thesis we have described the internals of the Soup database
+system, and how its query graph affects recovery options. We have implemented
+a baseline option for recovery, log based replay, and looked at how it can be
+improved using snapshotting. After defining a set of requirements for
+snapshotting, we designed a Soup compatible snapshotting method inspired by
+Chandy-Lamport's algorithm for snapshotting in distributed systems.
+
+Following that, we implemented snapshotting in the current Soup system, and
+benchmarked the result it had on our system's recovery time. The initial
+findings where positive, with a 90\% reduction in recovery time compared to only
+log recovery. We then looked at the run-time impact snapshotting had on Soup, by
+benchmarking write throughput with and without periodic snapshots. The results
+so far show that the penalty is insignificant.
+
+Finally, we looked at possible next iterations of snapshotting in Soup. While
+the method implemented here is a good first iteration, there is without doubt
+work left until we reach a production level snapshotting system in Soup.
 
 \bibliographystyle{acm}
 \bibliography{sources}
