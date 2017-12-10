@@ -1,4 +1,4 @@
-\documentclass[b5paper]{report}
+\documentclass[a4paper]{report}
 \usepackage{color}
 \usepackage{xcolor}
 \usepackage{tikz}
@@ -802,7 +802,7 @@ for serialization and persisting of the snapshots, followed by notifying the
 controller of each domain's snapshot completion.
 
 \subsection{Initializing a snapshot} \label{sec:snapshot-init}
-\begin{wrapfigure}{r}{0.5\textwidth}
+\begin{figure}[H]
   \begin{center}
     \includesvg[width=0.4\textwidth]{take-snapshot}
     \caption{
@@ -811,7 +811,7 @@ controller of each domain's snapshot completion.
       each domain. \label{fig:take-snapshot}
     }
   \end{center}
-\end{wrapfigure}
+\end{figure}
 
 Snapshots are initialized by the Soup controller using a special marker packet,
 \texttt{TakeSnapshot}. This happens at a regular interval, as defined by the
@@ -984,6 +984,43 @@ bincode::deserialize_from(&mut reader, bincode::Infinite)
 \end{listing}
 
 \subsection{Persisted files}
+Soup persists three types of files when utilizing both log recovery and
+snapshots: log files, individual snapshots, and a file used by the controller to
+keep track of the last successfully completed snapshot.
+
+\subsubsection{Persistence prefix}
+Each persisted file is prefixed by a string provided through a Soup
+configuration parameter, and functions in the same way as a database name would
+in other systems.
+
+\subsubsection{Domain Identifier}
+A domain can be uniquely identified by its domain and shard index. The domain
+index is unique for the entire system, while the shard indices are local to each
+domain. The pair is usually specified on the form
+\texttt{\{domain\_index\}\_\{shard\_index\}} in persisted file names.
+
+\subsubsection{Node Identifier}
+Each node includes a local address unique for the domain it belongs to. As
+each log file or snapshot includes the domain identifier, the local node address
+is used as a final specifier.
+
+\subsubsection{Log entries}
+Base nodes keep track of their own recovery logs. The filename follows the
+format \texttt{\{prefix\}-log-\{domain\_id\}-\{node\_index\}}.
+
+\subsubsection{Node snapshots}
+Snapshots are also persisted per node, but may unlike log entries belong to
+other nodes than the base nodes. They use a filename similar to that of log
+entries:
+\texttt{\{prefix\}-snapshot-\{snapshot\_id\}-\{domain\_id\}-\{node\_index\}},
+where the \texttt{snapshot\_id} specifies the ID the domain was given by the
+controller when the snapshot was requested.
+
+\subsubsection{Last Snapshot ID}
+Finally, the controller persists the ID of any completed snapshots into a
+specific file, on the format \texttt{\{prefix\}-snapshot\_id}. This file is read
+during recovery, when the controller decides which snapshot the graph as a whole
+should recover from.
 
 \chapter{Results}
 Soup is just as durable with log based recovery as it is with snapshotting. The
@@ -1178,13 +1215,14 @@ still has higher priority. To measure the performance penalty induced by
 snapshotting, a write throughput benchmark is used.
 
 This runs the same news-aggregation application described in section
-\ref{sec:vote}, but instead of measuring the time it takes to recover, we benchmark
-the total amount of writes our database is able to handle per second: the write
-throughput. This is measured using different snapshot timeouts \footnote{The
-amount of time the controller waits before starting a new snapshot.}, and
-compared to the baseline of using no snapshotting at all. Unless otherwise
-specified, Soup runs with two worker threads, a single client thread and each
-domain is sharded into two separate shards.
+\ref{sec:vote}, but instead of measuring the time it takes to recover, we
+benchmark the total amount of writes our database is able to handle per second:
+the write throughput. This is measured using different snapshot
+timeouts\footnote{The snapshot timeout states the amount of time the controller
+waits before initializing a new snapshot.}, and compared to the baseline of
+using no snapshotting at all. Unless otherwise specified, Soup runs with two
+worker threads, a single client thread and each domain is sharded into two
+separate shards.
 
 \begin{figure}
   \centering
