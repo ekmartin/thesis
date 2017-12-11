@@ -1146,10 +1146,10 @@ spends less than 10\% of the time log based recovery does.
   \centering
   \begin{tikzpicture}
     \begin{loglogaxis}[
-      xlabel={Recovery Time [ms]},
-      ylabel={Number of votes},
-      xmin=0, xmax=18000,
-      ymin=0, ymax=52000000,
+      xlabel={Number of votes},
+      ylabel={Initial Recovery Time [ms]},
+      xmin=0, xmax=52000000,
+      ymin=0, ymax=39000,
       ymajorgrids=true,
       legend pos=north west,
       grid style=dashed,
@@ -1158,43 +1158,42 @@ spends less than 10\% of the time log based recovery does.
 
       \addplot
       coordinates {
-        (77, 100000)
-        (159, 200000)
-        (333, 400000)
-        (620, 800000)
-        (1335, 1600000)
-        (2277, 3200000)
-        (4486, 6400000)
-        (8905, 12800000)
-        (19089, 25600000)
-        (38482, 51200000)
+        (100000, 77)
+        (200000, 159)
+        (400000, 333)
+        (800000, 620)
+        (1600000, 1335)
+        (3200000, 2277)
+        (6400000, 4486)
+        (12800000, 8905)
+        (25600000, 19089)
+        (51200000, 38482)
       };
       \addlegendentry{Log Recovery (initial)}
 
       \addplot
       coordinates {
-        (35, 100000)
-        (67, 200000)
-        (131, 400000)
-        (262, 800000)
-        (542, 1600000)
-        (1038, 3200000)
-        (1984, 6400000)
-        (3673, 12800000)
-        (7238, 25600000)
-        (14897, 51200000)
+        (100000, 35)
+        (200000, 67)
+        (400000, 131)
+        (800000, 262)
+        (1600000, 542)
+        (3200000, 1038)
+        (6400000, 1984)
+        (12800000, 3673)
+        (25600000, 7238)
+        (51200000, 14897)
       };
       \addlegendentry{Snapshot Recovery (initial)}
-
     \end{loglogaxis}
   \end{tikzpicture}
 
   \begin{tikzpicture}
     \begin{loglogaxis}[
-      xlabel={Recovery Time [ms]},
-      ylabel={Number of votes},
-      xmin=0, xmax=18000,
-      ymin=0, ymax=52000000,
+      xlabel={Number of votes},
+      ylabel={Total Recovery Time [ms]},
+      xmin=0, xmax=52000000,
+      ymin=0, ymax=180000,
       ymajorgrids=true,
       legend pos=north west,
       grid style=dashed,
@@ -1203,34 +1202,33 @@ spends less than 10\% of the time log based recovery does.
 
       \addplot
       coordinates {
-        (260, 100000)
-        (574, 200000)
-        (1166, 400000)
-        (2325, 800000)
-        (4768, 1600000)
-        (9700, 3200000)
-        (19735, 6400000)
-        (39896, 12800000)
-        (84425, 25600000)
-        (173515, 51200000)
+        (100000, 260)
+        (200000, 574)
+        (400000, 1166)
+        (800000, 2325)
+        (1600000, 4768)
+        (3200000, 9700)
+        (6400000, 19735)
+        (12800000, 39896)
+        (25600000, 84425)
+        (51200000, 173515)
       };
       \addlegendentry{Log Recovery (total)}
 
       \addplot
       coordinates {
-        (46, 100000)
-        (91, 200000)
-        (174, 400000)
-        (335, 800000)
-        (707, 1600000)
-        (1319, 3200000)
-        (2521, 6400000)
-        (4738, 12800000)
-        (9622, 25600000)
-        (17947, 51200000)
+        (100000, 46)
+        (200000, 91)
+        (400000, 174)
+        (800000, 335)
+        (1600000, 707)
+        (3200000, 1319)
+        (6400000, 2521)
+        (12800000, 4738)
+        (25600000, 9622)
+        (51200000, 17947)
       };
       \addlegendentry{Snapshot Recovery (total)}
-
     \end{loglogaxis}
   \end{tikzpicture}
 
@@ -1363,15 +1361,16 @@ snapshot worker on our 6 core benchmarking machine.
   \end{tikzpicture}
 
   \caption{
+    % TODO: fix this caption
     Write throughput measured with different snapshot timeouts.
-    \label{fig:throughput}
+    \label{fig:writer-throughput}
   }
 \end{figure}
 
 To simulate a situation where that is not the case, where the snapshot worker
 would have to compete with the rest of the worker threads for CPU cores, we
 increase the amount of client threads writing to our database in parallel. The
-result is shown in figure \ref{fig:throughput}, which gradually increases the
+result is shown in figure \ref{fig:writer-throughput}, which gradually increases the
 amount of writers and compares the throughput with no snapshots against the
 throughput of snapshotting every 10 seconds. The results here are similar to
 % TODO: throughput of?
