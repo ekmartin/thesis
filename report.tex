@@ -341,10 +341,50 @@ vote.put(vec![aid.into(), uid.into()]).unwrap();
 println!("Vote Count: {:?}", vote_count.lookup(&aid.into(), true))
   \end{minted}
   \caption{
-    Writing to and reading from a Soup instance.
+    An example program using Soup as its data-store.
     \label{lst:soup-example}
   }
 \end{listing}
+
+\subsubsection{Query Graph}
+Figure \ref{fig:example-graph} shows an annotated version of the query graph
+Soup uses to process queries for our example program. Each box in the figure
+defines a different node, and a separate color is used for each domain. A filled
+black square indicates a fully materialized node, while a shaded black
+square signifies a partially materialized node.
+
+\begin{figure}[H]
+  \centering
+  \includesvg[width=0.6\textwidth]{example-graph}
+  \caption{
+    The query graph Soup produces from our example application.
+    \label{fig:example-graph}
+  }
+\end{figure}
+
+Updates are processed from top to bottom. They are fed into the query graph
+through a base node after being persisted to disk. The base nodes are fully
+materialized: the result of all updates are stored here. The second labeled part
+of the graph, II, shows the egress and ingress nodes. These serve as connectors
+between two domains. Domains are represented by a single computational unit, and
+process updates in a synchronous manner. Ingress and egress nodes thus serve as
+an asynchronous boundary, and subsequent illustrations of the query graph refer
+to domains as the smallest unit, not individual nodes.
+
+The third label shows our first real operator node, an aggregator. Described by
+the γ symbol, it performs the work of our \texttt{COUNT(uid)} operation. This is
+also the last node that works with the Vote table's \texttt{uid} field, as
+subsequent nodes use the result of our \texttt{COUNT} query instead,
+\texttt{votes}. The fourth label shows the first projection node in the query
+graph, which simply selects the two fields from the aggregation operator.
+
+Following this, we have a join node at V. Join nodes use their ancestors' state
+to respond to queries, and do not materialize state on their own. Like the
+aggregator node, the join node also has a corresponding projection operator.
+Finally, we have a reader node at the bottom. While writes begin at the top of
+the graph, reads are processed from the bottom up. Notice that the reader node
+is partially materialized: if a query requests a row it does not store state
+for, it refers upwards
 
 \section{Recovery} \label{aries}
 At the core of most database systems you will find a log manager, which
@@ -1565,7 +1605,7 @@ left in the direction of a production level snapshotting method. At the same
 time, snapshotting works, and the effects it has on recovery are both positive
 and needed.
 
-\bibliographystyle{acm}
+\bibliographystyle{abbrv}
 \bibliography{sources}
 
 \end{document}
