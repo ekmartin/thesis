@@ -5,6 +5,7 @@ from subprocess import check_output
 MAX_FACTOR = int(environ.get('MAX_FACTOR', 1))
 BASE_ARTICLES = 10000
 BASE_VOTES = 100000
+REPEAT = 3
 
 
 def get_stats(output):
@@ -24,6 +25,18 @@ def run_command(command):
     return check_output(command, shell=True)
 
 
+def run_bench(command):
+    initial = 0
+    total = 0
+    for i in range(REPEAT):
+        i, t = get_stats(run_command(command))
+        print('%s: (%s, %s)' % (command, i, t))
+        initial += i
+        total += t
+
+    return initial / REPEAT, total / REPEAT
+
+
 def main():
     try:
         run_command('rm *-snapshot_id; rm *-log-*.json; rm *.bin')
@@ -36,8 +49,8 @@ def main():
         articles = BASE_ARTICLES * 2 ** i
         votes = BASE_VOTES * 2 ** i
         command = 'cargo run --release --bin vote-recovery -- --quiet --articles=%s --votes=%s' % (articles, votes)
-        logs = get_stats(run_command(command))
-        snapshots = get_stats(run_command('%s --snapshot' % command))
+        logs = run_bench(command)
+        snapshots = run_bench('%s --snapshot' % command)
         result = {
             'articles': articles,
             'votes': votes,
