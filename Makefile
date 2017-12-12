@@ -1,4 +1,4 @@
-report.pdf: report.tex macros.tex
+report.pdf: report.tex macros.tex sources.bib
 	latexmk report.tex
 
 watch:
