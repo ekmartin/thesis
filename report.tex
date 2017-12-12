@@ -10,6 +10,7 @@
 \usepackage{float}
 \usepackage{url}
 \usepackage{parskip}
+\usepackage{hyperref}
 \usepackage[chapter]{minted}
 
 \graphicspath{{images/}}
@@ -1016,6 +1017,42 @@ bincode::deserialize_from(&mut reader, bincode::Infinite)
   }
 \end{listing}
 
+\subsection{Snapshot Compression} \label{sec:compression}
+Writing to and reading from disk is a significant part of the work being done
+during snapshotting and recovery. Both of these are naturally influenced by the
+performance of the underlying storage medium. Compressing snapshots before they
+are persisted would lower the amount of raw I/O work being done, at the expense
+of CPU cycles needed to compress the data before doing so.
+
+Compression in Rust can be done using the \texttt{flate2} \cite{flate2} library,
+which supports a series of formats and backends. By working on streams,
+\texttt{flate2} composes well with the serialization library used for
+snapshotting, \texttt{bincode}.
+
+\begin{listing}[H]
+  \begin{minted}[escapeinside=||]{rust}
+// Serialization:
+let file = File::create(&filename)
+  .expect(&format!("Failed creating snapshot file: {}", filename));
+let buffered = BufWriter::new(file);
+|\colorbox{lime}{let mut writer = ZlibEncoder::new(buffered, Compression::default());}|
+bincode::serialize_into(&mut writer, &state, bincode::Infinite)
+  .expect("bincode serialization of snapshot failed");
+
+// And deserialization:
+let file = File::open(&filename)
+  .expect(&format!("Failed reading snapshot file: {}", filename));
+let buffered = BufReader::new(file);
+|\colorbox{lime}{let mut reader = ZlibDecoder::new(buffered);}|
+bincode::deserialize_from(&mut reader, bincode::Infinite)
+  .expect("bincode deserialization of snapshot failed")
+  \end{minted}
+  \caption{
+    Serialization and deserialization of compressed snapshots using
+    \texttt{bincode} \cite{bincode} and \texttt{flate2} \cite{flate2}.
+  }
+\end{listing}
+
 \subsection{Persisted files}
 Soup persists three types of files when utilizing both log recovery and
 snapshots: log files, individual snapshots, and a file used by the controller to
@@ -1238,6 +1275,72 @@ spends less than 10\% of the time log based recovery does.
   }
 \end{figure}
 
+\subsection{Snapshot Compression}
+Section \ref{sec:compression} describes a way of compressing snapshots before
+they are persisted to disk. The resulting implementation is compared to our
+baseline snapshotting method, and the data from the trial is shown in figure
+\ref{fig:compression}.
+
+Unfortunately, recovering from compressed snapshots takes on average at least
+twice as long as the baseline. With a focus on reducing recovery time rather
+than increasing it, continuing to use compression in our snapshotting process
+would be a bad decision. Compression does however naturally decrease the total
+storage space used by our recovery implementation. While this is not a terribly
+important metric right now, this might change in the event that the snapshots
+were to be persisted to a remote medium, instead of local storage.
+
+\begin{figure}[H]
+  \centering
+  \begin{tikzpicture}
+    \begin{loglogaxis}[
+      xlabel={Number of votes},
+      ylabel={Total Recovery Time [ms]},
+      xmin=0, xmax=52000000,
+      ymin=0, ymax=180000,
+      ymajorgrids=true,
+      legend pos=north west,
+      grid style=dashed,
+      cycle list name=color
+    ]
+     % TODO: 10000
+      \addplot
+      coordinates {
+        (100000, 0)
+        (200000, 233)
+        (400000, 462)
+        (800000, 838)
+        (1600000, 1566)
+        (3200000, 3008)
+        (6400000, 5949)
+        (12800000, 11498)
+        (25600000, 21314)
+        (51200000, 42087)
+      };
+      \addlegendentry{Compressed Snapshot Recovery}
+
+      \addplot
+      coordinates {
+        (100000, 46)
+        (200000, 97)
+        (400000, 176)
+        (800000, 349)
+        (1600000, 680)
+        (3200000, 1280)
+        (6400000, 2457)
+        (12800000, 4715)
+        (25600000, 9622)
+        (51200000, 17947)
+      };
+      \addlegendentry{Regular Snapshot Recovery}
+    \end{loglogaxis}
+  \end{tikzpicture}
+
+  \caption{
+    Total snapshot recovery time with and without compression.
+    \label{fig:compression}
+  }
+\end{figure}
+
 \section{Write Throughput Benchmark}
 % TODO: in the time sounds weird
 The previous section shows that snapshot recovery outperforms log based recovery
@@ -1384,13 +1487,6 @@ initial demonstration of the concept, there are ways to go before it can be
 considered optimal. Future iterations will most likely diverge into two paths:
 optimizing each individual snapshot, and improving the overall snapshotting
 method itself.
-
-\subsection{Snapshot Compression}
-A significant portion of the work being done while taking a snapshot will always
-be bound by the performance of the storage medium the snapshot is read from or
-persisted to. Compressing snapshots before they are persisted to disk would
-naturally lower the amount of raw bytes being persisted, at the expense of
-actually having to compress the data before doing so.
 
 \subsection{Snapshot Serialization}
 The current snapshot implementation utilizes bincode \cite{bincode} to serialize
