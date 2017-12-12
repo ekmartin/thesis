@@ -58,41 +58,4 @@ distributed systems.
 * Positive and negative updates
 * Checktable stuff
 * Sharding
-* ACID (cite or describe)
-* Formalize snapshot requirement
-* Describe snapshot protocol in soup in pseudo code
-  - Clarify that we're building up a snapshot protocol in steps
-* More figures:
-  - Group commit protocol
-  - Which nodes are materialized (under 3.2 Snapshotting)
-
-New stuff to write:
-* Write about the snapshotting implementation (Snapshotting and Logging in Soup).
-We've written an overview, this section should rather go into the details of how
-it works in Soup.
-  - Difference between local and remote Soup.
-  - Exactly which packets are sent, what happens when they're received?
-    - How is a snapshot initiated?
-    - How is a snapshot packet forwarded through the graph?
-    - What happens when a node receives two snapshot packets?
-    - What happens when a node receives two recovery packets?
-  - How is a snapshot taken and restored? bincode
-  - Snapshot ID in log entries (ignore on recovery)
-
-* Results:
-  - Improvement in recovery time. Compare recovery time for a vote runtime of
-    120s, with varying snapshot timeouts? Also against baseline of no
-    snapshotting.
-  - Graph for write throughput with different snapshot timeouts.
-  - Graph with CPU starved (one core maybe?)
-
-* Improvement Options:
-  - Persisting snapshots to distributed remote storage, avoiding coordination
-    messages from domains to controllers.
-  - Completely asynchronous snapshots.
-
-* Conclusion:
-Snapshots are good, and a needed supplement to logging for in-memory databases.
-Using snapshotting algorithms primarily made for distributed systems works, but
-it would be interesting to look at completely asynchronous and local snapshots.
-Throughput reduction not that bad.
+* go through and find possible figures

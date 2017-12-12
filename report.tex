@@ -119,7 +119,7 @@ graph, building on existing streaming data-flow research \cite{naiad, dataflow}
 by combining it with ideas from performant materialized view solutions
 \cite{dbtoaster, pequod}.
 
-\subsection{Data-flow Graph}
+\subsection{Data-flow graph}
 Soup turns base table schemas and a pre-defined list of queries into a data-flow
 graph that doubles as a set of materialized views. The base tables form the
 root nodes of the graph, and all writes propagate from here. The graph itself
@@ -338,7 +338,7 @@ println!("Vote Count: {:?}", vote_count.lookup(&aid.into(), true))
   }
 \end{listing}
 
-\subsubsection{Query Graph}
+\subsubsection{Query graph}
 Figure \ref{fig:example-graph} shows an annotated version of the query graph
 Soup uses to process queries for our example program. Each box in the figure
 defines a different node, and a separate color is used for each domain. A filled
@@ -401,7 +401,7 @@ durable, we make sure that we can recover from a potential crash. For
 transactional systems we also maintain enough data to be able to achieve
 atomicity for transactions.
 
-\section{Recovery in Main-Memory Databases} \label{main-memory-recovery}
+\section{Recovery in main-memory databases} \label{main-memory-recovery}
 Accessing and writing to durable storage is consistently a bottleneck in
 database storage systems. Even though database systems that rely on non-volatile
 storage for durability can have large amounts of data available in RAM, writes
@@ -1049,7 +1049,7 @@ bincode::deserialize_from(&mut reader, bincode::Infinite)
   }
 \end{listing}
 
-\subsection{Snapshot Compression} \label{sec:compression}
+\subsection{Snapshot compression} \label{sec:compression}
 Writing to and reading from disk is a significant part of the work being done
 during snapshotting and recovery. Both of these are naturally influenced by the
 performance of the underlying storage medium. Compressing snapshots before they
@@ -1134,7 +1134,7 @@ leads to a trade-off and dilemma: what is the threshold for snapshot induced
 overhead, and how much of an improvement in recovery time do we need to see for
 it to be worth it?
 
-\section{Benchmarking Setup} \label{sec:vote}
+\section{Benchmarking setup} \label{sec:vote}
 The results presented in this chapter are gathered using the same benchmark
 setup: a Soup instance running a user-curated news aggregating
 application, with a schema containing two base tables, Articles and Votes. Each vote
@@ -1168,7 +1168,7 @@ The benchmarks are run on an IBM System x3550 M4 server, with an Intel Xeon
 E5-2620 CPU, containing 6 physical and 12 logical cores running at 2GHz. The machine
 has 64GB of 1600MHz DDR3 RAM, and two 15,000 RPM SAS disks running in RAID-1.
 
-\section{Recovery Benchmark}
+\section{Recovery benchmark}
 The first benchmark measures the amount of time it would take for our news
 aggregation application to recover from scratch. To do so it populates the
 database with a set of articles and votes, then measures the time it
@@ -1183,7 +1183,7 @@ without replaying any logs. The benchmark creates snapshots only after all
 updates have been propagated through the system, ensuring that the two recovery
 methods both restore the application to the same state.
 
-\subsection{Recovery Metrics}
+\subsection{Recovery metrics}
 Two metrics are measured, initial and total recover time. The former states how
 long the recover command sent by the controller will block, while the latter
 describes the total amount of time needed for all recovery updates to propagate
@@ -1238,7 +1238,7 @@ spends less than 10\% of the time log based recovery does.
         (25600000, 18485)
         (51200000, 38482)
       };
-      \addlegendentry{Log Recovery (initial)}
+      \addlegendentry{Log recovery (initial)}
 
       \addplot
       coordinates {
@@ -1253,14 +1253,14 @@ spends less than 10\% of the time log based recovery does.
         (25600000, 7249)
         (51200000, 14897)
       };
-      \addlegendentry{Snapshot Recovery (initial)}
+      \addlegendentry{Snapshot recovery (initial)}
     \end{loglogaxis}
   \end{tikzpicture}
 
   \begin{tikzpicture}
     \begin{loglogaxis}[
       xlabel={Number of votes},
-      ylabel={Total Recovery Time [ms]},
+      ylabel={Total recovery time [ms]},
       xmin=0, xmax=52000000,
       ymin=0, ymax=180000,
       ymajorgrids=true,
@@ -1282,7 +1282,7 @@ spends less than 10\% of the time log based recovery does.
         (25600000, 83657)
         (51200000, 173515)
       };
-      \addlegendentry{Log Recovery (total)}
+      \addlegendentry{Log recovery (total)}
 
       \addplot
       coordinates {
@@ -1297,7 +1297,7 @@ spends less than 10\% of the time log based recovery does.
         (25600000, 9600)
         (51200000, 17947)
       };
-      \addlegendentry{Snapshot Recovery (total)}
+      \addlegendentry{Snapshot recovery (total)}
     \end{loglogaxis}
   \end{tikzpicture}
 
@@ -1307,7 +1307,7 @@ spends less than 10\% of the time log based recovery does.
   }
 \end{figure}
 
-\subsection{Snapshot Compression}
+\subsection{Snapshot compression}
 Section \ref{sec:compression} describes a way of compressing snapshots before
 they are persisted to disk. The resulting implementation is compared to our
 baseline snapshotting method, and the data from the trial is shown in figure
@@ -1326,7 +1326,7 @@ were to be persisted to a remote medium, instead of local storage.
   \begin{tikzpicture}
     \begin{loglogaxis}[
       xlabel={Number of votes},
-      ylabel={Total Recovery Time [ms]},
+      ylabel={Total recovery time [ms]},
       xmin=0, xmax=52000000,
       ymin=0, ymax=180000,
       ymajorgrids=true,
@@ -1348,7 +1348,7 @@ were to be persisted to a remote medium, instead of local storage.
         (25600000, 21314)
         (51200000, 42087)
       };
-      \addlegendentry{Compressed Snapshot Recovery}
+      \addlegendentry{Compressed snapshot recovery}
 
       \addplot
       coordinates {
@@ -1363,7 +1363,7 @@ were to be persisted to a remote medium, instead of local storage.
         (25600000, 9600)
         (51200000, 17947)
       };
-      \addlegendentry{Regular Snapshot Recovery}
+      \addlegendentry{Regular snapshot recovery}
     \end{loglogaxis}
   \end{tikzpicture}
 
@@ -1373,7 +1373,7 @@ were to be persisted to a remote medium, instead of local storage.
   }
 \end{figure}
 
-\section{Write Throughput Benchmark}
+\section{Write throughput benchmark}
 % TODO: in the time sounds weird
 The previous section shows that snapshot recovery outperforms log based recovery
 in the time it takes to recover from a complete failure. While this is without
@@ -1395,7 +1395,7 @@ separate shards.
   \centering
   \begin{tikzpicture}
     \begin{axis}[
-      xlabel={Snapshot Timeout [seconds]},
+      xlabel={Snapshot timeout [seconds]},
       ylabel={Throughput [writes per second]},
       xmin=5, xmax=30,
       ymin=2700000, ymax=3500000,
@@ -1418,7 +1418,7 @@ separate shards.
           (25, 3030454)
           (30, 3014442)
         };
-      \addlegendentry{With Snapshots}
+      \addlegendentry{With snapshots}
     \end{axis}
   \end{tikzpicture}
 
@@ -1471,7 +1471,7 @@ snapshot worker on our 6 core benchmarking machine.
           (14, 13945689)
           (15, 14649264)
         };
-      \addlegendentry{Without Snapshots}
+      \addlegendentry{Without snapshots}
 
       \addplot
         coordinates {
@@ -1491,7 +1491,7 @@ snapshot worker on our 6 core benchmarking machine.
           (14, 13217942)
           (15, 14716467)
         };
-      \addlegendentry{With Snapshots (10s timeout)}
+      \addlegendentry{With snapshots (10s timeout)}
     \end{axis}
   \end{tikzpicture}
 
@@ -1520,7 +1520,7 @@ considered optimal. Future iterations will most likely diverge into two paths:
 optimizing each individual snapshot, and improving the overall snapshotting
 method itself.
 
-\subsection{Snapshot Serialization}
+\subsection{Snapshot serialization}
 The current snapshot implementation utilizes bincode \cite{bincode} to serialize
 and deserialize a node's state into and from a file, as described in section
 \ref{sec:bincode}. There are a myriad of serialization formats that can be
@@ -1557,14 +1557,14 @@ use of the remote file system to be able to shuffle nodes around at different
 machines. This would also require changes to the log system however, as the
 current system stores the log of each node locally.
 
-\subsection{Log Recovery Improvements}
+\subsection{Log recovery improvements}
 Although this thesis has focused on snapshot recovery so far, regular replaying
 of log entries is an important part of the recovery process in Soup. The current
 implementation serializes log entries using JSON, as described in section
 \ref{sec:logging}, and a more efficient serialization format might perform
 better.
 
-\subsection{Asynchronous Snapshots}
+\subsection{Asynchronous snapshots}
 The current snapshot implementation requires global coordination across the
 graph to perform a snapshot. As described in section \ref{sec:delay-snapshot},
 this requires additional, and possibly complex, measures to prevent slowing down
