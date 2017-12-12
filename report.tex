@@ -99,28 +99,20 @@ This adds an extra layer of complexity, and is a trade-off accepted by almost
 every modern day developer that faces more than a trivial amount of load to
 their storage system.
 
+\begin{figure}[H]
+  \centering
+  \includesvg[width=\textwidth]{soup-graphs}
+  \caption{
+    The leftmost graph shows Soup outperforming the popular caching system
+    memcached on read-heavy workloads (95\%/5\%), while still holding up well
+    when faced with a 50\%/50\% mix in the graph to the right.
+  }
+\end{figure}
+
 Soup sets out to solve this by providing a single high performing system,
 removing the need for manual materialization altogether. The current prototype
 scales to millions of writes and reads per second \cite{soup}, and works both on
 a single machine and in a distributed setting.
-
-\begin{figure}
-  \centering
-  \includegraphics[width=\textwidth]{read}
-  \caption{
-    Soup (here: \textit{Phloem}) outperforms even the popular caching
-    system memcached on read-heavy (95\% reads) workloads.
-  }
-\end{figure}
-
-\begin{figure}
-  \centering
-  \includegraphics[width=\textwidth]{mixed}
-  \caption{
-    Soup (here: \textit{Phloem}) still holds up well when faced with a 50\%/50\%
-    mixed read/write workload.
-  }
-\end{figure}
 
 Soup does this by materializing data automatically in a data-flow
 graph, building on existing streaming data-flow research \cite{naiad, dataflow}
