@@ -32,17 +32,20 @@
   introducing complex cache hierarchies to deal with poor read performance in
   traditional database systems. Soup is a new and highly scalable database system
   that sets out to remove the need for these caching solutions, providing
-  impressive read performance right out of the box even for complex queries,
+  impressive read performance right out of the box, even for complex queries,
   without the downsides of having to manually invalidate cached data.
 
-  Soup achieves this by building up and maintaining a data-flow graph, avoiding
-  the need to manually maintain materialized views. By adapting the graph to
-  schema changes on-the-fly, Soup avoids the substantial downtime that
-  comes with migrations in traditional relational database management systems.
+  Soup achieves this by building up and maintaining a data-flow graph based on
+  the queries the system needs to handle, where updates are propagated through
+  the graph in a streaming manner. State is materialized along the graph
+  incrementally, moving the bulk of the query processing work from write-time to
+  read-time. By adapting the graph to schema changes on-the-fly, Soup avoids the
+  substantial downtime that comes with migrations in traditional relational
+  database management systems.
 
   Utilizing a group-commit protocol, Soup persists all base table writes to a
   log on durable storage before propagating changes throughout the graph.
-  Recovery is based on replaying the semantic updates from its logs, which
+  Recovery is based on replaying semantic updates from log entries, which
   naturally leads to gradually increasing recovery times as a database acquires
   more data. Checkpointing by taking a snapshot of the database's current state
   is a common way to solve this issue, reducing the size of the log at the same
@@ -53,8 +56,8 @@
   This thesis approaches the problem of creating a logically consistent snapshot
   across Soup's data-flow graph by utilizing snapshotting techniques common in
   distributed systems, considering each node in Soup's query graph as a single
-  node in a distributed setting. Initial results are promising, and shows an
-  overall reduction in recovery time of 90\% compared to log based recovery,
+  node in a distributed setting. Initial results are promising, and shows Soup
+  recovering in about a tenth of the regular recovery time when using snapshots,
   without a significant impact on the running system's write throughput.
 \end{abstract}
 
