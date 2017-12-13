@@ -20,10 +20,21 @@
 \usetikzlibrary{shapes,decorations,shadows}
 
 \begin{document}
-\title{Efficient recovery in a data-flow based storage system}
-\author{Lars Martin Bævre Ek \\ \texttt{larek@stud.ntnu.no}}
-\date{\today}
-\maketitle
+
+\begin{titlepage}
+  \centering
+	\includegraphics[width=0.55\textwidth]{ntnu}\par\vspace{1cm}
+	{\scshape\Large TDT4501 Specialization Project \par}
+	\vspace{1.5cm}
+	{\huge\bfseries Efficient recovery in a data-flow based storage system\par}
+	\vspace{2cm}
+	{\Large\itshape Lars Martin Bævre Ek \\ \texttt{larek@stud.ntnu.no} \par}
+	\vfill
+	supervised by\par
+  Professor Kjetil \textsc{Nørvåg}
+
+	{\large \today\par}
+\end{titlepage}
 
 \input{macros.tex}
 
@@ -140,7 +151,7 @@ different nodes throughout the graph.
 
 The query graph includes at least one materialized node per pre-defined query,
 located at the bottom of the graph as leaf nodes. This implies that reading from
-the system is a matter of finding the relevant leaf node, and retrieving data
+the system is a matter of finding the relevant leaf node and retrieving data
 from the node's materialized storage. This is one of the elements that makes Soup
 resemble more of a key-value store than a traditional RDBMS. Even though Soup
 supports advanced SQL queries, both mutations and retrievals are done with a
@@ -160,7 +171,7 @@ queries.
 Soup's data-flow graph is divided into logical domains, where each domain
 contains a series of nodes. Within a domain, a single update is processed at a
 time, removing the need for internal locks. Each domain is separated into a
-different computational entity, either a thread, or a separate Soup client when
+different computational entity, either a thread, or a separate Soup instance when
 the system is run in a distributed fashion.
 
 Domains are separated by ingress and egress nodes, where a boundary between
@@ -169,7 +180,7 @@ the ingress and egress nodes are connected with TCP connections instead.
 
 Note that a domain's regular packet processing does not normally handle read
 operations. These are served directly from the leaf nodes by separate worker
-threads, maintaining high read performance even in the midst of processing a
+threads, maintaining high read performance even in the midst of processing
 large amount of writes.
 
 \subsubsection{Sharding}
@@ -515,17 +526,17 @@ and has lead to an increase in so called main memory database systems.
 As these main memory database systems rely on fast volatile storage as their
 main data store, traditional techniques for maintaining ACID principles seem
 unappealing. Almost all storage systems want to maintain some measure of
-durability nonetheless however, which means that state needs to persisted to
+durability nonetheless, which means that state needs to persisted to
 durable storage at some point.
 
 Taking periodic checkpoints of the entire system's state is one way of avoiding
 total data loss in the event of a crash. Checkpointing used alone only achieves
 partial durability however, as it is unfeasible to take a checkpoint after every
-operation. Because of this some main memory systems also rely on so-called
+operation. Because of this, some main memory systems also rely on so-called
 K-safety, where data is replicated to K+1 replicas, ensuring that the system
 could survive up to K failing nodes and still maintain full durability
-\cite{early-voltdb}. K-safety is because of this naturally sensitive to total
-failures, where for example entire data centers fail.
+\cite{early-voltdb}. K-safety is naturally sensitive to total failures, where
+for example entire data centers fail.
 
 A third alternative is maintaining a log of actions, which in VoltDB is referred
 to as command logging \cite{voltdb-recovery}. Whereas a fine-grained system like
@@ -543,7 +554,7 @@ systems like VoltDB opt for checkpointing as a way of minimizing the size of the
 log that has to be replayed during recovery. VoltDB is not unique here though,
 and a plethora of different checkpointing solutions exists in today's selection
 of in-memory databases. As usual, there are trade-offs to be chosen between here
-as well. However, most systems seem to agree that performing the checkpoints in an
+as well. Most systems seem to agree that performing the checkpoints in an
 asynchronous manner, without blocking the system, is critical. This helps
 achieve two key properties, as stated by \cite{memory-checkpoint}:
 
@@ -661,7 +672,7 @@ buffered fashion, avoiding the need to read in the entire log in memory. Similar
 to how the packets were created in the first place, individual updates from
 each log entry are batched into chunks, before finally being turned into
 separate packets that are passed on to the rest of the query graph. This speeds
-up the recovery performance by avoiding having to process a potentially large
+up recovery performance by avoiding having to process a potentially large
 amount of small log entries.
 
 \begin{figure}[H]
@@ -787,7 +798,7 @@ even if snapshots are taken at different physical points in time.
   \caption{
     Similar to the partial query graph in figure \ref{bad-example}, an update
     \texttt{A} is propagating through the graph. This time it is followed by a
-    snapshot marker however, which makes sure that domains with materialized
+    snapshot marker, which makes sure that domains with materialized
     nodes only snapshot when they receive the marker.
     \label{good-example}
   }
@@ -900,7 +911,7 @@ logical time. Cloning the state when the snapshot marker arrives would naturally
 solve this, while not getting us any further from the algorithm in listing
 \ref{async-snapshot}.
 
-A clone of the domain's state has to be taken at some point however, but
+A clone of the domain's state has to be taken at some point, but
 preferably later than when the snapshot marker arrives. To do so we would need
 to be able to go back from a state $ S_m $ to the original state when the marker
 arrived, $ S_n $. With $ L_{n..m} $ signifying the updates that arrived from $ n
@@ -938,7 +949,7 @@ eventually knows when the entire graph has performed the same snapshot. At that
 point the identifier of the snapshot can be persisted to disk, and the log
 entries prior to the snapshot being taken can eventually be discarded.
 Recovery is then a matter of first loading each materialized node's state from
-their local snapshot, then replaying the rest of the log entries available.
+their local snapshot, followed by replaying the rest of the log entries available.
 
 \begin{listing}[H]
   \begin{minted}[frame=single]{python}
@@ -1029,7 +1040,7 @@ Soup can be both internal and external, where the latter is represented through
 readers, as discussed briefly in section \ref{sec:readers}. Both the internally
 materialized nodes, and the readers, can as section \ref{sec:materialization}
 states be both partially and fully materialized, meaning that a read request
-might refer upwards to its ancestors nodes to fulfill a query it does not have
+might refer upwards to its ancestors to fulfill a query it does not have
 materialized state for. This does not make too much of a difference for the
 snapshotting algorithm however, as it snapshots partially and fully materialized
 nodes in the same way.
