@@ -167,6 +167,20 @@ Note that domains do not handle read operations. These are served directly from
 the leaf nodes by separate worker threads, maintaining high read performance
 even in the midst of processing a large amount of writes.
 
+\subsubsection{Sharding}
+Soup is a \textit{main-memory database} and thus stores all of its data in
+volatile memory. Even though the amount of RAM a single machine can contain has
+gone up in recent years, Soup still needs to rely on the ability to spread data
+across multiple machine to be able to work with bigger datasets.
+
+Being able to distribute domains across a network is a good first step towards
+this, but what happens when a single domain is too big for one machine's memory?
+This is the case if we consider a single node in the query graph to be the
+smallest atomic unit in a Soup system. With sharding however, it is not.
+Sharding lets Soup divide up the work normally done by a single domain into
+multiple domain shards, which can then be distributed across its instances as it
+sees fit.
+
 \subsection{Architecture}
 At the core of a running Soup system is the controller, which serves as the
 initial entry point for communication with the rest of the Soup system. Clients
