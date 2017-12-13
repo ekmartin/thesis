@@ -30,7 +30,7 @@
 \begin{abstract}
   Growing performance demands in today's web applications have lead to developers
   introducing complex cache hierarchies to deal with poor read performance in
-  traditional database systems. Soup is a new and highly scalable database system
+  traditional database systems. Soup is a new and highly scalable system
   that sets out to remove the need for these caching solutions, providing
   impressive read performance right out of the box, even for complex queries,
   without the downsides of having to manually invalidate cached data.
@@ -118,28 +118,28 @@ removing the need for manual materialization altogether. The current prototype
 scales to millions of writes and reads per second \cite{soup}, and works both on
 a single machine and in a distributed setting.
 
-Soup does this by materializing data automatically in a data-flow
-graph, building on existing streaming data-flow research \cite{naiad, dataflow}
-by combining it with ideas from performant materialized view solutions
+Soup does this by materializing data automatically in a data-flow graph,
+building on existing streaming data-flow research \cite{naiad, dataflow} in
+combination with ideas from high performing solutions for materialized views
 \cite{dbtoaster, pequod}.
 
 \subsection{Data-flow graph}
-Soup turns base table schemas and a pre-defined list of queries into a data-flow
-graph that doubles as a set of materialized views. The base tables form the
-root nodes of the graph, and all writes propagate from here. The graph itself
-resembles the query graph of a traditional relational database system
+Soup turns SQL base table schemas and a pre-defined list of SQL queries into a
+data-flow graph that doubles as a set of materialized views. The base tables
+form the root nodes of the graph, and all writes propagate from here. The graph
+itself resembles the query graph of a traditional relational database system
 \cite{codd}, with the graph's intermediate nodes being relational operators.
 
 However, whereas a relational database management system's query graph is used
-primarily to retrieve data, by executing operators to fetch data from durable
-storage, Soup's graph does the exact opposite. The graph is defined ahead of
-queries being received, and writes stream through the relevant nodes in the
-graph - starting from the base nodes. This skews the majority of the system's
-work towards writes, as results are materialized at different nodes throughout
-the graph.
+primarily while retrieving data, by executing operators to fetch data from
+durable storage, Soup's graph does the exact opposite. The graph is defined
+ahead of queries being received, and writes stream through the relevant nodes in
+the graph - starting from the base nodes. This skews the majority of the
+system's work towards writes, as results are incrementally materialized at
+different nodes throughout the graph.
 
 The query graph includes at least one materialized node per pre-defined query,
-located at the bottom of the graph as leaf nodes. This means that reading from
+located at the bottom of the graph as leaf nodes. This implies that reading from
 the system is a matter of finding the relevant leaf node, and retrieving data
 from the node's materialized storage. This is one of the elements that makes Soup
 resemble more of a key-value store than a traditional RDBMS. Even though Soup
@@ -147,14 +147,14 @@ supports advanced SQL queries, both mutations and retrievals are done with a
 key, which then maps to a corresponding value.
 
 On an elementary level one could see Soup creating a separate graph for each
-query, similar to query graphs in traditional database systems, but that would
-have been quite inefficient. For one it would have lead to Soup materializing a
-lot of duplicate data for intermediary materialized nodes, and base table writes
+query, similar to query graphs in traditional database systems. That would have
+been quite inefficient however, as it would have lead to Soup materializing
+duplicate data for intermediary materialized nodes, while base table writes
 would have had to be propagated to more nodes than necessary. Migrations would
-also have taken considerably longer time, as adding queries would mean
-constructing a completely new query graph. Instead Soup uses multi-query
-optimization techniques to create common sub-graphs of nodes that can be used in
-multiple queries.
+also have taken considerably longer, as adding queries would mean constructing a
+completely new query graph. Instead Soup uses multi-query optimization
+techniques to create common sub-graphs of nodes that can be used in multiple
+queries.
 
 \subsubsection{Domains}
 Soup's data-flow graph is divided into logical domains, where each domain
@@ -164,26 +164,30 @@ different computational entity, either a thread, or a separate Soup client when
 the system is run in a distributed fashion.
 
 Domains are separated by ingress and egress nodes, where a boundary between
-these are formed on the form of a buffered channel. In a multi-machine Soup
-setup, the ingress and egress nodes are connected with TCP connections instead.
+these are formed on the form of a buffered channel. In a multi-machine setup,
+the ingress and egress nodes are connected with TCP connections instead.
 
-Note that domains do not handle read operations. These are served directly from
-the leaf nodes by separate worker threads, maintaining high read performance
-even in the midst of processing a large amount of writes.
+Note that a domain's regular packet processing does not normally handle read
+operations. These are served directly from the leaf nodes by separate worker
+threads, maintaining high read performance even in the midst of processing a
+large amount of writes.
 
 \subsubsection{Sharding}
 Soup is a \textit{main-memory database} and thus stores all of its data in
 volatile memory. Even though the amount of RAM a single machine can contain has
 gone up in recent years, Soup still needs to rely on the ability to spread data
-across multiple machine to be able to work with bigger datasets.
+across multiple machines to work with large datasets.
 
-Being able to distribute domains across a network is a good first step towards
-this, but what happens when a single domain is too big for one machine's memory?
-This is the case if we consider a single node in the query graph to be the
-smallest atomic unit in a Soup system. With sharding however, it is not.
-Sharding lets Soup divide up the work normally done by a single domain into
-multiple domain shards, which can then be distributed across its instances as it
-sees fit.
+While being able to distribute domains across a network is a good first step, it
+is not sufficient when a single domain ends up including more data than a single
+machine's memory can handle. This is the case if we consider a single node in
+the query graph to be the smallest atomic unit in a Soup system. With sharding
+however, it is not. Sharding lets Soup divide up the work normally done by a
+single domain into multiple domain shards, which can then be distributed across
+its instances as it sees fit.
+
+Soup currently shards data statically based on each individual key, however
+dynamic sharding is on the list of future improvements.
 
 \subsection{Architecture}
 At the core of a running Soup system is the controller, which serves as the
@@ -199,15 +203,24 @@ distributed Soup still holds. The latest version of Soup improves this by making
 controllers fault-tolerant, using ZooKeeper \cite{zookeeper} to implement
 consensus.
 
+\begin{figure}[H]
+  \centering
+  \includesvg[width=\textwidth]{architecture}
+  \caption{
+    Dashed lines show local communication, while solid lines might happen across
+    different machines.
+  }
+\end{figure}
+
 \subsubsection{Souplets}
-The actual work performed by a Soup system is done in Souplets, which
-correspond to separate instances that communicate in a distributed fashion. Each
-Souplet has a pool of workers, where domains are spread throughout the pool.
-Previous implementations of Soup ran each domain in its own separate thread,
-which led to reduced performance when the amount of domains went up in
-core-constrained systems. A worker pool solves this by setting a cap on the
-amount of threads that process domains, such that a single thread might be
-responsible for processing packets for multiple domains.
+The majority of the work performed by a Soup system happens in the Souplets,
+which correspond to separate instances that communicate with the controller in a
+distributed fashion. Each Souplet has a pool of workers, where domains are
+spread throughout the pool. Previous implementations of Soup ran each domain in
+its own separate thread, which led to reduced performance when the amount of
+domains went up in core-constrained systems. A worker pool solves this by
+setting a cap on the amount of threads processing domains, such that a single
+thread might be responsible for processing packets for multiple domains.
 
 Soup also supports running completely in one process, which is convenient for
 local development and testing. In that case there is only a single worker pool,
@@ -216,11 +229,11 @@ which the controller is responsible for starting.
 Communication between the Souplet instances and the controller is done over TCP,
 in a layer that is referred to as the coordination plane. This involves
 heartbeat messages, but also packets that are sent when domains are assigned,
-re-assigned and removed to different Souplet instances.
+re-assigned and moved to different Souplet instances.
 
 \subsubsection{Backlog} \label{sec:readers}
-Data written through mutators are sent through the data-flow graph, where they
-eventually reach the leaf nodes: the readers. Here data is persisted into an
+Data written using mutators is sent through the data-flow graph, eventually
+reaching the leaf nodes: the readers. At the readers, data is persisted into an
 in-memory eventually consistent data structure, an \texttt{evmap} \cite{evmap}.
 Getters then expose the records residing here by accessing the readers directly,
 avoiding the need to go through the entire graph to retrieve data.
@@ -228,21 +241,21 @@ avoiding the need to go through the entire graph to retrieve data.
 performance for read-heavy work loads.
 
 \subsection{Materialization} \label{sec:materialization}
-Similar to traditional relational databases, writes are inserted into the
-table directly - a base node in Soup. Whereas this marks the end of the
-operation for an RDBMS, Soup will continue by propagating the write throughout
-the query graph, storing the result at materialized nodes.
+Similar to a traditional databases, writes are inserted into the table directly
+- a base node in Soup. Whereas this marks the end of the operation for most
+relational database systems, Soup will continue by propagating the write
+throughout the query graph, storing the result at materialized nodes.
 
 The insertions are handled with a group-commit protocol, where records are
 batched up and finally inserted into a durable log before being propagated to
 the base node.
 
-Soup primarily materializes leaf nodes in the graph, to enable fast read
-queries. In some cases intermediary operators might also choose to materialize
-the records they receive before they forward them through to their child nodes.
-This is especially the case for stateful operators, such as extremum queries, as
-these need to incrementally update their result - instead of having to go
-through and re-calculate the state on every new record.
+To enable fast read queries, Soup primarily materializes leaf nodes in the
+graph. In some cases intermediary operators might also choose to materialize the
+records they receive before forwarding them through to their child nodes. This
+is especially the case for stateful operators, such as extremum queries, as they
+need to incrementally update their results instead of having to go through and
+re-calculate the state on every new record.
 
 Nodes can also be partially materialized, which lets each node choose which rows
 to keep in their internal state. This resembles a regular caching system, where
@@ -265,11 +278,11 @@ if it was a pure function, without consideration for previous writes.
 \textit{Projection} operators is a good example of a stateless operator, picking
 out the columns that subsequent child nodes in the query graph are interested
 in. This can be done by looking at each update as a standalone unit, without any
-consideration for the previous or next write inserted into the system.
+consideration for the previous or next writes inserted into the system.
 
 A second type of stateless operator is the \textit{filter} operator. While a
 projection filters out columns, filter operators remove uninteresting data. SQL
-\textit{WHERE} clauses result in filter operators.
+\texttt{WHERE} clauses result in filter operators.
 
 \begin{figure}[H]
   \centering
@@ -288,7 +301,7 @@ adds one to the current count.
 
 Another example is the \textit{top-k} operator, which returns the \textit{k}
 most significant elements determined by a given order. This could be the result
-of an SQL \textit{ORDER BY} clause, together with a \textit{LIMIT}. In a similar
+of an SQL \texttt{ORDER BY} clause, together with a \texttt{LIMIT}. In a similar
 vein, \textit{extremum} operators, returning either a minimum or maximum value
 for a specific column, also fall within this category.
 
@@ -327,29 +340,29 @@ of the core issues Soup sets out to solve, by providing a database system that
 lets developers change both the base table schemas and the pre-defined queries
 at any point.
 
-Soup constructs a new graph for added queries. This is done by finding overlaps
-with the existing query graph nodes, to avoid duplicate materializations and
-to reduce the amount of work done by each migration. Soup marks nodes as
-partially materialized when possible, which lets the system start processing
-requests for the newly defined query right away, by only fetching each key from
-ancestor nodes when necessary. For fully materialized nodes, Soup will replay
-all relevant base table writes from the closest materialized node. This
-delays the point where Soup can start processing requests, but has the advantage
-of not delaying subsequent requests to retrieve materialized keys later on.
+Soup constructs a new graph for added queries. To avoid duplicate
+materializations and to reduce the amount of work done by each migration, this
+is done by finding overlaps with the existing query graph nodes. Soup marks
+nodes as partially materialized when possible, which lets the system start
+processing requests for the newly defined query right away, by only fetching
+keys from ancestor nodes when necessary. For fully materialized nodes, Soup
+replays all relevant base table writes from the closest materialized node.
+This delays the point where Soup can start processing requests, but has the
+advantage of not delaying subsequent requests to retrieve materialized keys
+later on.
 
 Modifications to base table schemas are done in-place, by having Soup's base
 nodes internally include the full history of columns for that specific table.
-% TODO: default values
 
 \subsection{Transactions}
 An increasing amount of real-world database system users have found relaxed
 consistency guarantees to be sufficient in the last few years, as it greatly
 simplifies the problem of replicating large amounts of data across data centers
-with high performance \cite{existential}. There are nonetheless without doubt
-a wide variety of use cases for transactions, where the eventual consistency that
-Soup offers is insufficient. To cater to these types of applications, Soup
-allows developers to opt-in for transaction support, by defining their base
-nodes as transactional.
+with high performance \cite{existential}. There are nonetheless a wide variety
+of use cases for transactions, where the eventual consistency that Soup offers
+is insufficient. To cater to these types of applications, Soup allows developers
+to opt-in for transaction support, by defining their base nodes as
+transactional.
 
 Soup's transaction support is carefully designed to avoid slowing down
 non-transactional workloads. Using optimistic concurrency control, Soup returns
@@ -452,7 +465,7 @@ an asynchronous boundary, and subsequent illustrations of the query graph refer
 to domains as the smallest unit, not individual nodes.
 
 The third label shows our first real operator node, an aggregator. Described by
-the γ symbol, it performs the work of our \texttt{COUNT(uid)} operation. This is
+the $ \gamma $ symbol, it performs the work of our \texttt{COUNT(uid)} operation. This is
 also the last node that works with the Vote table's \texttt{uid} field, as
 subsequent nodes use the result of our \texttt{COUNT} query instead,
 \texttt{votes}. The fourth label shows the first projection node in the query
@@ -464,7 +477,7 @@ aggregator node, the join node also has a corresponding projection operator.
 Finally, we have a reader node at the bottom. While writes begin at the top of
 the graph, reads are processed from the bottom up. Notice that the reader node
 is partially materialized: if a query requests a row it does not store state
-for, it refers upwards
+for, it requests the specific key from its ancestors until it finds a result.
 
 \section{Recovery} \label{aries}
 At the core of most database systems you will find a log manager, which
@@ -477,8 +490,8 @@ Even to this day one of the most popular algorithms for recovery is ARIES
 \cite{aries} (Algorithm for Recovery and Isolation Exploitation Semantic), which
 uses a write-ahead log to make sure that a persistent record of changes is
 maintained before the actual changes themselves. Upon recovery ARIES makes sure
-that all actions from the log prior to a crash are repeated (\textit{REDO}),
-then reverts the operations belonging to failing transactions (\textit{UNDO}).
+that all actions from the log prior to a crash are repeated (\texttt{REDO}),
+then reverts the operations belonging to failing transactions (\texttt{UNDO}).
 The former makes sure that durability is respected, while the latter maintains
 atomicity.
 
@@ -487,7 +500,8 @@ implementation, the principle behind a write-ahead log remains the same. By
 maintaining a log of actions \textit{before} the changes themselves are made
 durable, we make sure that we can recover from a potential crash. For
 transactional systems we also maintain enough data to be able to achieve
-atomicity for transactions.
+atomicity for each transaction: it should either happen in totality, or not at
+all.
 
 \section{Recovery in main-memory databases} \label{main-memory-recovery}
 Accessing and writing to durable storage is consistently a bottleneck in
@@ -591,7 +605,7 @@ variable is deallocated when that owner goes out of scope.
 
 \section{Logging in Soup} \label{sec:logging}
 Soup only logs entries from committed transactions, greatly simplifying the
-recovery protocol. The log is to written prior to entries being forwarded
+recovery protocol. The log is written prior to entries being forwarded
 through the query graph, which makes sure that all changes are persisted to disk
 before being made accessible to the client. Soup does however make use of a
 \textit{group-commit scheme} \cite{main-memory}, buffering up a series of
@@ -607,17 +621,18 @@ serialized arrays of Soup's data types.
 \subsection{Log based recovery} \label{sec:log-replay}
 While a persisted log of entries existed ahead of writing this thesis, use of
 these logs for recovery purposes was yet to be implemented. While the final goal
-of this project is snapshot based recovery, the first step was nonetheless to
+of this project was snapshot based recovery, the first step was nonetheless to
 implement the baseline: replaying the log.
 
 In a traditional relational database management system, log recovery often comes
-in multiple phases. Following a system such as ARIES, as described in section
+in multiple phases. Following a system like ARIES, as described in section
 \ref{aries}, log recovery is responsible for a wide variety of tasks, such as
 making sure the work of aborted transactions is undone. Compared to this, log
-recovery in Soup is fairly trivial. This comes as a result of the log being
-highly granular, as it only includes the actual operations being done - not the
-differences each operation results in for the database. There is no UNDO or REDO
-either: only committed operations result in log entries being persisted.
+recovery in Soup is fairly trivial. This comes as a result of the log not being
+very granular, as it only includes the actual operations being done - not the
+differences each operation results in for the database. There is no
+\texttt{UNDO} or \texttt{REDO} either: only committed operations result in log
+entries being persisted.
 
 Log recovery in Soup is because of this a matter of replaying the writes from
 the persisted logs on start-up, by feeding them into the query graph's base
@@ -646,7 +661,7 @@ buffered fashion, avoiding the need to read in the entire log in memory. Similar
 to how the packets were created in the first place, individual updates from
 each log entry are batched into chunks, before finally being turned into
 separate packets that are passed on to the rest of the query graph. This speeds
-up recovery performance by avoiding having to process a potentially large
+up the recovery performance by avoiding having to process a potentially large
 amount of small log entries.
 
 \begin{figure}[H]
@@ -656,10 +671,6 @@ amount of small log entries.
     \label{log-chunking}
   }
 \end{figure}
-
-For transactional base nodes, a timestamp has to be taken for each packet
-created by the recovery packet. This is done through a specific RPC request to the
-checktable.
 
 \section{Snapshotting}
 While being able to replay log entries during recovery
@@ -947,18 +958,14 @@ ReceiveSnapshotAck(domain_id, snapshot_id):
 \end{listing}
 
 \subsubsection{Failure before discarding the log}
-% TODO: this section is bad
 In the event of a failure \textit{after} the controller has persisted the
 snapshot ID to disk, but \textit{before} all nodes have managed to discard the
 correct log entries from durable storage, duplicate replaying of those log
 entries upon recovery is a possibility.
 
-To prevent this from happening, each log
-entry should include the last snapshot ID the domain successfully discarded.
-While recovering, log entries that existed before the latest snapshot can then be
-ignored. This is possible because the system is certain that each domain has an
-available persisted snapshot at this point, as it would not have told it to
-discard log entries otherwise.
+To prevent this from happening, each log entry should include their domain's
+current snapshot ID. While recovering, log entries that correspond to an old
+snapshot can then be ignored.
 
 \section{Implementing snapshotting in Soup}
 The previous sections described the need for snapshotting as an addition to log
@@ -980,8 +987,8 @@ controller of each domain's snapshot completion.
     \includesvg[width=0.4\textwidth]{take-snapshot}
     \caption{
       Snapshots are initialized when the controller sends a
-      \texttt{TakeSnapshot} packet, and forwarded through the query graph by
-      each domain. \label{fig:take-snapshot}
+      \texttt{TakeSnapshot} packet, which is forwarded through the query graph
+      by each domain. \label{fig:take-snapshot}
     }
   \end{center}
 \end{figure}
@@ -994,8 +1001,8 @@ event to this internal loop. This is done from a separate snapshotting thread,
 which sleeps until it is time to take a snapshot.
 
 When the controller's main loop receives a request to trigger a snapshot, it
-first makes sure that it has received all confirmations from the previous
-snapshot before continuing. After doing so it increments its
+first makes sure that it has received all confirmations from previous
+snapshots before continuing. After doing so it increments its
 \texttt{snapshot\_id}, and fires off a \texttt{TakeSnapshot} packet to each of
 the base node domains in its query graph. Finally, it finishes, without waiting
 for replies or confirmations from the domains it requested a snapshot of.
@@ -1004,8 +1011,8 @@ for replies or confirmations from the domains it requested a snapshot of.
 Whenever a domain receives a \texttt{TakeSnapshot} packet, it creates a cloned
 copy of each of its materialized nodes' states. As shown in
 \ref{fig:take-snapshot}, each domain then forwards the snapshotting packet on to
-its children in the query graph, ensuring that each materialized node eventually
-gets snapshotted. Finally, it sends the cloned states to its
+its children in the query graph, ensuring that all materialized nodes eventually
+get snapshotted. Finally, it sends the cloned states to its
 \texttt{SnapshotWorker}, by issuing a \texttt{PersistSnapshotRequest}.
 
 Forwarding of the \texttt{TakeSnapshot} packet by individual domains are done
@@ -1024,7 +1031,7 @@ materialized nodes, and the readers, can as section \ref{sec:materialization}
 states be both partially and fully materialized, meaning that a read request
 might refer upwards to its ancestors nodes to fulfill a query it does not have
 materialized state for. This does not make too much of a difference for the
-snapshotting algorithm however, as we snapshot partially and fully materialized
+snapshotting algorithm however, as it snapshots partially and fully materialized
 nodes in the same way.
 
 The state of readers and internal nodes are on the other hand represented
@@ -1224,7 +1231,7 @@ entries:
 where the \texttt{snapshot\_id} specifies the ID the domain was given by the
 controller when the snapshot was requested.
 
-\subsubsection{Last Snapshot ID}
+\subsubsection{Last snapshot ID}
 Finally, the controller persists the ID of any completed snapshots into a
 specific file, on the format \texttt{\{prefix\}-snapshot\_id}. This file is read
 during recovery, when the controller decides which snapshot the graph as a whole
@@ -1408,8 +1415,8 @@ spends less than 10\% of the time log based recovery does.
   \end{tikzpicture}
 
   \caption{
-    The two graphs show the initial and total recovery time for recovery based
-    on only log entries, and only snapshots.
+    The two graphs, both with logarithmic axis, show the initial and total
+    recovery time for recovery based on only log entries, and only snapshots.
   }
 \end{figure}
 
@@ -1488,14 +1495,14 @@ still has higher priority. To measure the performance penalty induced by
 snapshotting, a write throughput benchmark is used.
 
 This runs the same news-aggregation application described in section
-\ref{sec:vote}, but instead of measuring the time it takes to recover, we
-benchmark the total amount of writes our database is able to handle per second:
-the write throughput. This is measured using different snapshot
-timeouts\footnote{The snapshot timeout states the amount of time the controller
-waits before initializing a new snapshot.}, and compared to the baseline of
-using no snapshotting at all. Unless otherwise specified, Soup runs with two
-worker threads, a single client thread and each domain is sharded into two
-separate shards.
+\ref{sec:vote}, while benchmarking the total amount of writes the database is
+able to handle per second, the write throughput, instead of the time it takes to
+recover. This is measured using different snapshot timeouts\footnote{The
+snapshot timeout states the amount of time the controller waits before
+initializing a new snapshot.}, and compared to the baseline of using no
+snapshotting at all. Unless otherwise specified, Soup runs with two worker
+threads, a single client thread and each domain is sharded into two separate
+shards.
 
 \begin{figure}
   \centering
@@ -1664,8 +1671,8 @@ machines. This would also require changes to the log system however, as the
 current system stores the log of each node locally.
 
 \subsection{Log recovery improvements}
-Although this thesis has focused on snapshot recovery so far, regular replaying
-of log entries is an important part of the recovery process in Soup. The current
+Although this thesis has a focus on snapshot recovery, regular replaying of log
+entries is also an important part of the recovery process in Soup. The current
 implementation serializes log entries using JSON, as described in section
 \ref{sec:logging}, and a more efficient serialization format might perform
 better.
@@ -1694,14 +1701,13 @@ Following that, the snapshotting method is implemented in the current Soup
 system, and the result is benchmarked with a focus on the system's recovery
 time. The initial findings were positive, with a 90\% reduction in recovery
 time compared to only log based recovery. The run-time impact of snapshotting is
-then considered, through a write throughput benchmark - with and without
+then considered using a write throughput benchmark - with and without
 periodic snapshots. The results so far show an insignificant penalty.
 
-Finally, next iterations in regards to the snapshotting method is considered.
 While the initial implementation is a good baseline, there is without doubt work
-left in the direction of a production level snapshotting method. At the same
-time, snapshotting works, and the effects it has on recovery are both positive
-and needed.
+left in the direction of a production level snapshotting method. Snapshotting
+does on the other hand work, and the effects it has on recovery are both
+positive and needed.
 
 \bibliographystyle{abbrv}
 \bibliography{sources}
