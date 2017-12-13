@@ -11,6 +11,7 @@
 \usepackage{url}
 \usepackage{parskip}
 \usepackage{hyperref}
+\usepackage{fontspec}
 \usepackage[chapter]{minted}
 
 \graphicspath{{images/}}
@@ -20,7 +21,7 @@
 
 \begin{document}
 \title{Efficient recovery in a data-flow based storage system}
-\author{Martin Ek}
+\author{Lars Martin Bævre Ek \\ \texttt{larek@stud.ntnu.no}}
 \date{\today}
 \maketitle
 
@@ -244,6 +245,76 @@ Nodes can also be partially materialized, which lets each node choose which rows
 to keep in their internal state. This resembles a regular caching system, where
 keys can be evicted after a period of inactivity.
 
+\subsection{Data-flow}
+Writes entering into Soup flows through the query graph as updates,
+where each node deals with and forwards individual updates as they see fit. An
+update can contain either \texttt{Positive} or \texttt{Negative} records, used
+to signify if the receiving node should add to or remove something from their
+materialized state.
+
+While a node does not necessarily have to be an operator, each operator is a
+node. Operators are generally divided into three categories based on how they
+react to new updates.
+
+\subsubsection{Stateless operators}
+The simplest type of operator is the stateless one, which processes updates as
+if it was a pure function, without consideration for previous writes.
+\textit{Projection} operators is a good example of a stateless operator, picking
+out the columns that subsequent child nodes in the query graph are interested
+in. This can be done by looking at each update as a standalone unit, without any
+consideration for the previous or next write inserted into the system.
+
+A second type of stateless operator is the \textit{filter} operator. While a
+projection filters out columns, filter operators remove uninteresting data. SQL
+\textit{WHERE} clauses result in filter operators.
+
+\begin{figure}[H]
+  \centering
+  \includesvg[width=0.3\textwidth]{project}
+  \caption{
+    The projection operator picks out specific columns from incoming updates.
+  }
+\end{figure}
+
+\subsubsection{Stateful operators}
+Stateful operators on the other hand, require internally materialized state to
+be able to forward updates. Operators that fall into this category generally
+compute results incrementally, where each new update adds to an existing
+result. An SQL \texttt{COUNT} operation is a good example, where each new row
+adds one to the current count.
+
+Another example is the \textit{top-k} operator, which returns the \textit{k}
+most significant elements determined by a given order. This could be the result
+of an SQL \textit{ORDER BY} clause, together with a \textit{LIMIT}. In a similar
+vein, \textit{extremum} operators, returning either a minimum or maximum value
+for a specific column, also fall within this category.
+
+\begin{figure}[H]
+  \centering
+  \includesvg[width=0.3\textwidth]{max}
+  \caption{
+    The \textit{max} extremum operator first emits a negative update to signify a state
+    change, then emits the new maximum value.
+  }
+\end{figure}
+
+\subsubsection{Join operators}
+Finally, we have joins, which are neither stateless nor stateful. Instead, joins
+rely on their parents' state to be able to produce updates. This is achieved
+using \textit{ancestor queries}, which propagate in the opposite direction of
+updates: towards the base nodes. An ancestor query stops propagating whenever it
+reaches a node that maintains state for the given key.
+
+\begin{figure}[H]
+  \centering
+  \includesvg[width=0.7\textwidth]{join}
+  \caption{
+    The \textit{join} operator performs an ancestor query to find a
+    corresponding row for the newly received update. It then merges these into a
+    single update, and emits that.
+  }
+\end{figure}
+
 \subsection{Migrations}
 Relational databases require developers to pre-define a set of table schemas for
 their application. Changes to these throughout a project's life cycle are often
@@ -355,15 +426,15 @@ println!("Vote Count: {:?}", vote_count.lookup(&aid.into(), true))
 \subsubsection{Query graph}
 Figure \ref{fig:example-graph} shows an annotated version of the query graph
 Soup uses to process queries for our example program. Each box in the figure
-defines a different node, and a separate color is used for each domain. A filled
-black square indicates a fully materialized node, while a shaded black
-square signifies a partially materialized node.
+defines a different node, and a separate color is used for each domain.
 
 \begin{figure}[H]
   \centering
   \includesvg[width=0.6\textwidth]{example-graph}
   \caption{
-    The query graph Soup produces from our example application.
+    The query graph Soup produces from our example application. Nodes are marked
+    with either \texttt{(full)} or \texttt{(part.)} for respectively fully or
+    partially materialized nodes.
     \label{fig:example-graph}
   }
 \end{figure}
@@ -473,11 +544,29 @@ it is used to develop Servo - a completely new browser engine.
 
 \begin{listing}[H]
   \begin{minted}[frame=single]{rust}
+fn suffix(input: &mut String) {
+    input.push_str(" is a String!");
+}
+
+fn output(input: String) {
+    println!("Hello: {}", input);
+}
+
 fn main() {
-  println!("Hello World!");
+    // Construct a mutable String, from a string litteral (str):
+    let mut input = String::from("Hi!");
+    // Pass a mutable reference to suffix:
+    suffix(&mut input);
+    // Finally, move our input variable into the output function:
+    output(input);
+    // println!("This line would not compile: {}", input);
 }
   \end{minted}
-  \caption{Hello World in Rust}
+  \caption{
+    The example shows the basics of Rust's move semantics. The \texttt{input}
+    variable cannot be used after the call to \texttt{output()} - it has been
+    moved into the function.
+  }
 \end{listing}
 
 When choosing a language, developers are often forced to compromise between
