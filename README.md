@@ -1,5 +1,5 @@
-# semester
-Preliminary thesis project.
+# master
+Master thesis report.
 
 ## Instructions
 Building requires [XeLaTeX](http://www.texts.io/support/0001/) and
