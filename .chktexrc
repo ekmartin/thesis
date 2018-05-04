@@ -1,0 +1,9 @@
+VerbEnvir
+{
+  listing lstlisting mintex
+}
+
+WipeArg
+{
+  \code:{}
+}
