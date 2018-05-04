@@ -110,9 +110,9 @@ To maintain immutability, new SS-tables are always created without modifying
 existing on-disk content. Two writes to the same key can thus co-exist in
 different SS-tables, even if only the last written key is relevant to the
 system. This is quite wasteful, and would overtime lead to worse and worse read
-performance. \cite{lsm} solves this through \textit{merging} existing LSM-trees
-into new ones at regular intervals. RocksDB does so in background threads, where
-it is referred to as \textit{compaction}.
+performance. The original LSM-paper~\cite{lsm} solves this through
+\textit{merging} existing LSM-trees into new ones at regular intervals. RocksDB
+does so in background threads, where it is referred to as \textit{compaction}.
 
 During compacting, multiple SS-tables are merge-sorted into a single new
 structure. This process also removes duplicate keys, retaining only the last
@@ -173,3 +173,32 @@ structure based on the prefix.
 
 % TODO: might show an example to better explain prefix stuff here, or save it
 % for implementation.
+
+\subsection{RocksDB from Rust}
+While RocksDB is written in C++ it provides a separate API through its
+C-bindings, which are used to call into it from a variety of different
+languages\footnote{RocksDB Language Bindings:
+\url{https://github.com/facebook/rocksdb/blob/master/LANGUAGE-BINDINGS.md}}.
+
+% TODO: ref to appendix?
+% TODO: ref to ffi section
+This thesis makes use of a modified version of
+\textbf{rust-rocksdb}\footnote{rust-rocksdb: \url{https://github.com/spacejam/rust-rocksdb}}, which exposes a Rust-friendly
+API that eventually calls into the C-bindings.
+
+\begin{listing}[H]\label{lst:rocksdb-rust}
+  \begin{minted}[frame=lines]{rust}
+let db = DB::open_default("db_path").unwrap();
+
+let key = b"key";
+let value = b"value";
+db.put(key, value).unwrap();
+
+match db.get(key) {
+  Ok(v) => assert_eq!(*v.unwrap(), value),
+  Err(e) => panic!("failed reading from rocksdb: {}", e),
+}
+  \end{minted}
+
+  \caption{Simple example usage of rust-rocksdb}
+\end{listing}
