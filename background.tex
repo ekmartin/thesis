@@ -1,0 +1,85 @@
+\chapter{Background} \label{chap:background}
+
+\section{RocksDB}
+RocksDB is an embedded key-value store optimized for modern flash storage.
+RocksDB started out at Facebook, with the goal of making a version of Google's
+LevelDB that performed well on modern hardware. Today, RocksDB is used at the
+heart of a wide variety of databases, such as CockroachDB, MyRocks (Facebook's
+fork of MySQL) and TiDB.
+
+Traditional B-tree based database systems are often faced with poor write
+performance as a result of random writes, which perform worse than sequential
+writes on both magnetic and flash based storage mediums. RocksDB, on the other,
+hand achieves impressive write performance through the use of immutable
+log-structured merge trees (LSM-trees), avoiding the need for random writes to
+persistent storage altogether.
+
+Writes are initially only written to a persistent write-ahead log (WAL) and
+in-memory data structures referred to as memtables. Later on these memtables are
+flushed to RocksDB's LSM-tree data structure, Static Sorted Tables (SST). The
+latter is done by background threads, allowing regular processing to continue
+without getting blocked by slow writes to persistent storage.
+
+% TODO:
+% * Calling into RocksDB (C-API, rust-rocksdb)
+% * Iterators
+% * Prefix Iteration/Slice Transform
+
+\subsection{MemTables}
+All writes are initially synchronously written to an in-memory data structure--a
+memtable--which is later flushed to disk at the point of filling up. Both the
+size and the number of memtables can be configured at runtime.
+
+RocksDB's default memtable implementation is a skiplist, with an $ O(log n) $
+bound on inserts, searches and deletes. This can be changed to a series of hash
+based implementations, which offer better performance if all operations are done
+within a pre-specified key prefix.
+
+\subsection{Static Sorted Tables}
+After a memtable reaches a certain size, RocksDB's background threads will be
+responsible for flushing it to persistent storage. This will generate one or
+more SS-tables on disk, where each file is sorted. SS-tables are immutable: a
+new SS-table is always created, and existing ones are never updated. This
+ensures that writes remain sequential.
+
+\subsection{Basic Operations}
+Akin to other key-value databases, RocksDB offers a familiar API of
+\code{Put(key, value)}, \code{Get(key)} and \code{Delete(key)}, operating
+directly on bytestream values. Both insertions and deletions are purely
+sequential: subsequent \code{Put} operations of the same key never backtrack and
+overwrite existing keys, and deletions insert tombstone markers to avoid having
+to randomly read and mutate previously written values.
+
+This means that a read operation has to search through all the potential row
+destinations to find its target value.
+target value.
+
+
+This is part of RocksDB's
+promise of write performance, and naturally leads to slightly worse read
+performance compared to something like a B-tree.
+
+
+
+\subsection{Compactions}
+To ensure purely sequential writes, keys are never overwritten directly by
+RocksDB.
+
+SS-tables are organized in levels, where a new level is created when the
+previous one reaches a certain size.
+
+This is done in the background by RocksDB's
+worker threads
+
+
+
+
+RocksDB maintains writes in an in-memory buffer data structure
+
+, built
+by Facebook. The project started out as a fork of of Google's LevelDB--another
+key-value store--with the goal of building a database targeting modern hardware.
+
+RocksDB achieves impressive write performance through the use of log-structured
+merge trees.
+

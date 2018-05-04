@@ -1,8 +1,10 @@
-report.pdf: report.tex macros.tex sources.bib
+TEX := $(shell find . -name '*.tex')
+
+report.pdf: ${TEX} sources.bib
 	latexmk report.tex
 
 watch:
 	latexmk -pvc report.tex
 
 clean:
-	rm report.{aux,blg,dvi,fls,log,toc,pdf,fdb_latexmk}
+	rm *.{aux,blg,dvi,fls,log,toc,pdf,fdb_latexmk}
