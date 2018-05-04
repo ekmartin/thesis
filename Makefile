@@ -7,4 +7,5 @@ watch:
 	latexmk -pvc report.tex
 
 clean:
-	rm *.{aux,blg,dvi,fls,log,toc,pdf,fdb_latexmk}
+	rm -f *-blx.bib
+	rm -f *.{aux,bak,bbl,blg,dvi,fls,log,out,toc,pdf,fdb_latexmk,xml}

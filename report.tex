@@ -19,6 +19,25 @@
 \usetikzlibrary{positioning}
 \usetikzlibrary{shapes,decorations,shadows}
 
+% BibLaTeX for bibliography
+\usepackage[
+  backend=bibtex,
+  style=numeric-comp,
+  minalphanames=3,
+  isbn=false,
+  sortcites=true,
+  sorting=anyt,
+  abbreviate=false,
+  url=false,
+  doi=false,
+  maxnames=6,
+  minbibnames=3,
+  maxbibnames=7]{biblatex}
+
+\setlength\bibitemsep{5pt}
+
+\addbibresource{sources.bib}
+
 \begin{document}
 
 \begin{titlepage}
@@ -47,7 +66,6 @@
 \input{introduction}
 \input{background}
 
-\bibliographystyle{abbrv}
-\bibliography{sources}
+\printbibliography
 
 \end{document}
