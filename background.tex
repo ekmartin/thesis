@@ -1,5 +1,156 @@
 \chapter{Background}\label{chap:background}
 
+\section{SQLite}
+SQLite~\cite{sqlite} is by far the most widely deployed database ever written.
+Used in everything from smart phones to cars, with an estimated user count in
+the magnitude of multiple billion users, SQLite is everywhere. \footnote{Who
+uses SQLite? \url{https://www.sqlite.org/mostdeployed.html}}. SQlite is an
+embedded database, and requires no extra processes, or even threads, to run.
+
+In a world of unreliable software, SQLite is stable as a rock. It has 100\%
+branch test coverage, with a test suite containing millions of different test
+cases. SQLite is, and always has been, available in the public domain. As the
+name implies, SQLite provides an SQL interface to developers, with decent support
+for everything from indices to views. The library itself is written in about 130
+thousand lines of C code.
+
+While the main usage of SQLite is as a persistent application store (\eg in
+browsers and mobile applications), SQLite is also popularly used as an engine in
+other databases. One such example is the recently open-sourced
+FoundationDB~\cite{foundation}, which provides a distributed database with full
+ACID transactions, where each shard makes use of SQLite at its core.
+
+\subsection{B-trees}
+Similar to a significant amount of other relational databases, SQLite makes use
+of B-trees~\cite{btree} for its on-disk index structures. This is with good
+reason: B-trees are well suited for mediums that perform better with larger
+blocks of data, such as traditional spinning hard drives. While it has never
+been officially decided what the B in B-tree stands for, a B-tree is a
+self-balancing binary tree data structure.
+
+Unlike other tree structures, such as binary search trees, each node in a B-tree
+holds multiple values. By keeping the amount of values in a node---the node
+size---close to the size of a block on disk, most of a B-tree's operations can
+be performed in $ O(\log_b n) $ disk reads, where $ b $ is the maximum number of
+entries per block, and $ \log_b n $ the height of the tree. With traditional
+storage mediums, where a single disk seek might take multiple milliseconds, this
+is extremely important.
+
+\todo{Include a figure of a B-tree and a B+tree perhaps?}
+
+When the term B-tree is used in database systems today, it is usually used to
+refer to an improved version of the traditional data structure, and known as a
+B+-tree. Whereas the former stores values in all levels of the tree, the
+specialized version only does so at the leaf level, with the internal nodes only
+containing copies of the keys. Actual records can then be stored in a different
+on-disk data structure, with pointers from the leaf nodes, and by introducing
+sibling pointers at the leaf node level, range queries can be efficiently
+executed by walking the bottom of the tree horizontally.
+
+\subsection{Rollback Journal}
+SQLite implements support for atomic transactions through the use of a rollback
+journal. A historic copy of values prior to changes are kept in a separate
+file---the rollback journal---so that they can be copied back to the actual
+database file in the event of a \code{ROLLBACK}. Similarly, this file can be
+deleted after a \code{COMMIT} of the transaction.
+
+With a rollback journal, SQLite requires a full exclusive lock to be held for
+the duration of all mutations to prevent file corruption, blocking any potential
+readers from accessing the database. This is the main reason SQLite is commonly
+not used as the storage system for applications that require high-performance
+concurrent access to their database (\eg web applications backends with multiple
+active users): only a single write operation could be performed at the time.
+This is not the case with reads, which hold shared locks.
+
+\subsection{Write-ahead Log}
+In version 3.7.0, SQLite introduced an alternative to the traditional rollback
+journal: the write-ahead log~\cite{sqlite-wal}. Maintaining the same atomicity
+and durability guarantees, the use of a WAL significantly improves write
+performance by catering to more sequential disk access. Additionally, reading
+can now co-exist with writing, as writers do no longer block read access.
+
+While the original rollback journal format writes directly to the database file,
+maintaining old values in the rollback journal, SQLite in WAL-mode does the
+opposite. Updates are appended to the WAL, and copied over to the main database
+file when a \textit{checkpoint} is taken. This is also the reason readers can
+continue to access the database while writes are happening, as the database file
+itself is not mutated, only the WAL.\@
+
+This introduces a slight performance penalty for reads however, as there are now
+potentially two sources of truth for all content: the main database file, and
+the WAL until a checkpoint happens. The longer the WAL is, the more time has to
+be spent searching through it by reads.
+
+\subsection{Interacting with SQLite}
+Most applications interact with SQLite through its C-API, compiling SQL
+queries into prepared binary statements, which can then be executed efficiently
+with different arguments, as shown in listing \ref{lst:sqlite}.
+
+\begin{listing}[H]\label{lst:sqlite}
+  \begin{minted}[frame=lines]{c}
+sqlite3 *db;
+sqlite3_stmt *statement;
+char *err_msg = 0;
+sqlite3_open("test.db", &db);
+sqlite3_exec(
+  db,
+  "CREATE TABLE data (id INTEGER PRIMARY KEY)",
+  NULL,
+  NULL,
+  &err_msg
+);
+
+// Compile a prepared statement:
+sqlite3_prepare_v2(
+  db,
+  "INSERT INTO data VALUES (?1)",
+  -1,
+  &statement,
+  0
+);
+
+// Then insert a single row with the value 10:
+int id = 10;
+sqlite3_bind_int(statement, 1, id);
+  \end{minted}
+
+  \caption{Simple SQLite C-example showing how to write a single row (error
+  handling ignored for brevity)}
+\end{listing}
+
+In addition, most programming languages have at least one popular library for
+accessing SQLite, abstracting away the need to directly call into the C-bindings
+through more idiomatic APIs for each language.
+
+SQLite also provides a command-line interface, which can be used to directly
+read from and modify a database with SQL statements.
+
+\subsection{SQLite from Rust}
+Accessing SQLite from Rust can be done through the excellent \code{rusqlite}
+library\footnote{rusqlite: \url{https://github.com/jgallagher/rusqlite}}, which
+provides a Rust API on top of SQLite's C-bindings.
+
+\begin{listing}[H]\label{lst:sqlite}
+  \begin{minted}[frame=lines]{rust}
+let conn = Connection::open("test.db").unwrap();
+conn.execute(
+  "CREATE TABLE data (id INTEGER PRIMARY KEY)",
+  &[],
+).unwrap();
+
+// Compile a prepared statement:
+let statement = conn.prepare("INSERT INTO data VALUES (?1)").unwrap();
+
+// Then insert a single row with the value 10:
+let id = 10;
+statement.execute(&[&id]).unwrap();
+
+  \end{minted}
+
+  \caption{SQLite example using \code{rusqlite} showing how to write a single
+  row.}
+\end{listing}
+
 \section{RocksDB}
 RocksDB is an embedded key-value store optimized for modern flash storage.
 RocksDB started out at Facebook, with the goal of making a version of Google's
