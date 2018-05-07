@@ -13,6 +13,7 @@
 \usepackage[hidelinks]{hyperref}
 \usepackage[utf8]{inputenc}
 \usepackage[chapter]{minted}
+\usepackage[Lenny]{fncychap}
 
 \graphicspath{{images/}}
 \svgpath{{images/}}
@@ -64,14 +65,22 @@
   \input{abstract}
 \end{abstract}
 
+\ChNameVar{\fontsize{14}{16}\usefont{OT1}{cmr}{m}{n}\selectfont}
+\ChNumVar{\fontsize{60}{62}\usefont{OT1}{qpl}{m}{n}\selectfont}
+\ChTitleVar{\Huge\bfseries\rm}, \ChRuleWidth{1pt}
+
 \input{introduction}
 \input{background}
 \input{related-work}
 \input{benchmarks}
 \input{persistent-bases}
+\input{snapshotting}
 \input{evaluation}
 \input{future-work}
 \input{conclusion}
+
+\appendix
+\input{contributions}
 
 \printbibliography
 
