@@ -42,7 +42,7 @@ nodes would achieve the following goals:
   \item Reduce recovery time after failures
 \end{enumerate}
 
-\section{In-Memory State}
+\section{In-Memory State}\label{sec:in-memory-state}
 The current in-memory state implementation provides a key-value API with support
 for multiple indices. A separate state data structure is kept for each
 materialized node, including base nodes. The same data structure is used by both
@@ -159,6 +159,154 @@ Similar to Soup's existing \code{State} implementation, a durable replacement
 has to support mapping a single key to multiple values, \ie secondary indices.
 
 \section{Embedding an existing storage engine}
+On-disk data structures have wildly varying performance characteristics. A
+B+tree (see~\ref{sec:btree}) might perform well on random reads, but get heavily
+out-performed by an LSM-tree (see~\ref{sec:rocksdb}) on sequential writes. At
+the same time, decades of changes in hardware research have broadened the field
+even further. A new NVMe SSD is able to reach almost half a million random reads
+per
+second\footnote{\url{http://www.samsung.com/semiconductor/minisite/ssd/product/consumer/ssd960/}},
+whereas a traditional spinning disk barely scratches the surface of a
+hundred\footnote{\url{https://www.symantec.com/connect/articles/getting-hang-iops-v13}}.
+This makes building data structures for durable storage non-trivial and time
+consuming.
+
+On the other hand, there is a plethora of existing, open-source, storage
+backends available today. Similar to their underlying data structures, different
+backends are built for different use cases, with different hardware in mind.
+This provides an option to implementing data structures from scratch, by instead
+making use of existing database systems to test performance assumptions, which
+is exactly what this thesis will do: first using SQLite, and later using
+RocksDB.\@
+
+\subsection{State Interface}
+Before diving into the individual \code{State} operations, we need to pave the
+way for the possibility of even having two different state implementations: the
+existing in-memory implementation, and the new persistent storage variant, from
+here on referred to as \code{MemoryState} and \code{PersistentState}. This is
+achieved by turning the existing \code{State} implementation into an
+interface---a \textit{trait} in Rust---which would then be implemented by both
+the \code{State} variants. This helps maintain the current status quo where
+\code{State} is an \textit{abstract data type}: internal Soup callers do not
+need to be aware of the location their data is getting stored---they can simply
+interact with the \code{State} trait as a black box\@.
+
+\begin{listing}[H]\label{lst:state}
+  \begin{minted}[frame=lines]{rust}
+pub trait State {
+    /// Add an index keyed by the given columns.
+    fn add_key(&mut self, columns: &[usize]);
+
+    /// Inserts or removes each record into State
+    fn process_records(&mut self, records: &Records);
+
+    /// Retrieve values from the index defined for `columns`.
+    fn lookup<'a>(
+      &'a self,
+      columns: &[usize],
+      key: &KeyType
+    ) -> LookupResult<'a>;
+
+    /// Count the rows currently stored in `State`.
+    fn rows(&self) -> usize;
+
+    /// Return a copy of all records.
+    fn cloned_records(&self) -> Vec<Vec<DataType>>;
+}
+  \end{minted}
+
+  \caption{\
+    A segment of the main methods defined in our \code{State} trait.
+  }
+\end{listing}
+
+As code is often more succinct than prose, a subset of the \code{State} trait is
+shown in listing~\ref{lst:state}. The rest of the methods have been omitted for
+clarity, as they are only relevant to partially materialized state, which base
+nodes never are (they are always fully materialized). Similarly, some of the
+methods take in extra arguments related to partial state---omitted here.
+
+Comparing the trait in listing~\ref{lst:state} to the operations described
+in~\ref{sec:in-memory-state} you might notice that the insert and removal
+operations are gone. These have been abstracted into a higher level method:
+\code{process\_records}. Every packet in Soup has the potential to contain more
+than one record by being a merged packet, due to \textit{group commit}
+(see~\ref{sec:group-commit}). This meant that the function responsible for
+materializing records in a node's \code{State} would go through a packet's
+records, individually calling methods like \code{State::insert} and
+\code{State::remove}.
+This is completely okay for an in-memory implementation, but not as good for
+something that might potentially write to slower, durable storage. Here batching
+is key, and an extra indicator to the underlying methods that they can perform
+operations in one go is crucial.
+
+\subsection{Retrieving rows from \code{State}}
+While other languages might implement memory safety through garbage collection
+or manual memory management, Rust does the same through ownership (as described
+in~\ref{sec:rust}). Whenever a value goes out of scope, it is deallocated. How
+do you know when a value goes out of scope? In a garbage collected system, this
+happens when there are no longer any references to the value. In Rust, each
+value only has one owner, and any references need to live \textbf{at least} as
+long as the value created by that owner.
+
+However, what if a value needs to be owned by more than one location? That is
+often the case for data structures, and \code{State} is no exception here.
+Values stored in \code{MemoryState} should not have to be cloned during
+retrieval, which would incur a heavy performance penalty. Instead, retrieving
+values from \code{State} return dynamically reference
+counted\footnote{\url{https://doc.rust-lang.org/std/rc/index.html}} values,
+allowing shared ownership of a single value by counting owners at runtime.
+Subsequent retrievals of the same value always point to the same memory
+location, with the source of truth being stored in \code{State}.
+
+What if, on the other hand, a row does not exist in memory to begin with? This
+would be the case when data is retrieved from durable storage: after reading a
+row in its on-disk representation and de-serializing it to a value in Soup's
+data format, where is that very value stored? The \textit{data} used to create
+the value exists on disk, but the actual memory representation of the value was
+just created. While \code{MemoryState::lookup} would want to return a reference
+to an internally stored value, \code{PersistentState::lookup} would rather want
+to hand over ownership of the value to the caller. Enter the
+\code{Cow}\footnote{\url{https://doc.rust-lang.org/std/borrow/enum.Cow.html}}
+---a \textbf{clone-on-write} pointer from Rust's standard library that helps
+with this exact purpose, by allowing data to be represented either as
+\code{Borrowed} in the case of \code{MemoryState} or \code{Owned} for
+\code{PersistentState}.
+
+Additionally, the rows returned from \code{State::lookup} are wrapped in a
+\code{LookupResult} enum, representing either a found or a missing value. The
+latter is never relevant for \code{PersistentState}, which is only used to
+represent fully materialized state. Note that a \textit{miss} does not signify
+that the value does not exist, it simply means that this particular \code{State}
+does not have it, while a \code{State} instance further up the data-flow graph
+does.
+
+\begin{listing}[H]\label{lst:existing-index}
+  \begin{minted}[frame=lines]{rust}
+// Before:
+pub enum LookupResult<'a> {
+    Some(&'a [Rc<Vec<DataType>>]),
+    Missing,
+}
+
+// After:
+pub enum RecordResult<'a> {
+    Borrowed(&'a [Rc<Vec<DataType>>]),
+    Owned(Vec<Vec<DataType>>),
+}
+
+pub enum LookupResult<'a> {
+    Some(RecordResult<'a>),
+    Missing,
+}
+  \end{minted}
+  \caption{\
+    Prior to the introduction of \code{PersistentState}, reads from \code{State}
+    would always result in a borrowed, reference counted value. Now that only
+    happens for reads from \code{MemoryState}---with \code{PersistentState} the
+    caller is responsible for retaining ownership of the value.
+  }
+\end{listing}
 
 \section{Persistent State with SQLite}
 

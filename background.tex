@@ -7,7 +7,7 @@
 \section{SQLite}
 SQLite~\cite{sqlite} is by far the most widely deployed database ever written.
 Used in everything from smart phones to cars, with an estimated user count in
-the magnitude of multiple billion users, SQLite is everywhere. \footnote{Who
+the magnitude of multiple billion users, SQLite is everywhere\footnote{Who
 uses SQLite? \url{https://www.sqlite.org/mostdeployed.html}}. SQlite is an
 embedded database, and requires no extra processes, or even threads, to run.
 
@@ -24,7 +24,7 @@ other databases. One such example is the recently open-sourced
 FoundationDB~\cite{foundation}, which provides a distributed database with full
 ACID transactions, where each shard makes use of SQLite at its core.
 
-\subsection{B-trees}
+\subsection{B-trees}\label{sec:btree}
 Similar to a significant amount of other relational databases, SQLite makes use
 of B-trees~\cite{btree} for its on-disk index structures. This is with good
 reason: B-trees are well suited for mediums that perform better with larger
@@ -155,7 +155,7 @@ statement.execute(&[&id]).unwrap();
   row.}
 \end{listing}
 
-\section{RocksDB}
+\section{RocksDB}\label{sec:rocksdb}
 RocksDB is an embedded key-value store optimized for modern flash storage.
 RocksDB started out at Facebook, with the goal of making a version of Google's
 LevelDB that performed well on modern hardware. Today, RocksDB is used at the
