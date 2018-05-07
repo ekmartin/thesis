@@ -1,0 +1,165 @@
+\chapter{Persistent Base Nodes}\label{chap:persistent-bases}
+
+Updates begin their journey through the Soup data-flow graph at the base nodes,
+after being successfully persisted to Soup's write-ahead log
+(see~\ref{sec:soup-log}). While nodes further down in the graph might be
+\textit{partial}, the base nodes always contain every single record a Soup
+application has seen through its lifetime. This is crucial in maintaining a
+balance between efficient read queries and space usage: popular queries will be
+handled by partial state further down the graph, while reads for in-frequently
+accessed rows will be able to refer all the way up to the source of truth, the
+base nodes, through what in Soup is called a replay (see~\ref{sec:replays}). In
+comparison to existing database systems, base nodes are closest to what
+otherwise might be known as \textit{tables}.
+
+\begin{figure}[H]
+  \centering
+  \includesvg[width=0.6\textwidth]{base-nodes}
+  \caption{Updates enter the base nodes after being persisted to a write-ahead
+  log.}
+\end{figure}
+
+While partial nodes can use \textit{eviction} (see~\ref{sec:eviction}) to keep
+their memory footprint low, the size of base nodes will continue to grow
+unbounded throughout a Soup instance's lifetime. In the short term this can be
+handled by sharding Soup's data across multiple machines in a cluster, however
+this is infeasible in the long term: sustained write workloads would continue to
+grow the base node state, regardless of whether the data is accessed by queries
+or not.
+
+To combat this we would like to to move either parts of, or all of, the state
+stored in base nodes to durable storage. This would reduce Soup's overall memory
+usage, and perhaps even more significantly, transition Soup from a purely
+in-memory database to a system that can store more data than its available
+memory. With data safely persisted to base nodes, recovery after a failure would
+also require less work, as partial nodes could gradually recover when data is
+requested through replays. Summarized, introducing persistence to Soup's base
+nodes would achieve the following goals:
+
+\begin{enumerate}
+  \item Prevent Soup's memory usage from growing unbounded over time
+  \item Support larger-than-memory data sets
+  \item Reduce recovery time after failures
+\end{enumerate}
+
+\section{In-Memory State}
+The current in-memory state implementation provides a key-value API with support
+for multiple indices. A separate state data structure is kept for each
+materialized node, including base nodes. The same data structure is used by both
+partially and fully materialized nodes, however as base nodes always have to be
+fully materialized this section will omit describing details regarding the
+former. The state data structure will be referred to as \code{State}.
+
+\subsection{Adding indices}
+The \code{State::add\_key} method introduces a new index to a specific \code{State} map,
+and takes a set of columns as its argument. Additional indices do not lead to
+multiple copies of the data, but rather contain pointers to the existing rows.
+These pointers are held in separate data structures however: each new index
+introduces a new hash map structure responsible for answering queries for that
+specific set of columns.
+
+New indices have to be \textbf{built}, as they are expected to answer queries
+for data that has already been inserted, right away.
+
+\begin{listing}[H]\label{lst:existing-index}
+  \begin{minted}[frame=lines]{rust}
+state = State()
+// Initialize `state` with an index on the first column:
+state.add_key([0])
+
+// Then insert two rows:
+state.insert([A, 1])
+state.insert([B, 1])
+assert_equal(state.lookup(A), [[A, 1]])
+
+// Now, add an index on the second column:
+state.add_key([1])
+// ...which should return values that existed prior to the index being added:
+assert_equal(state.lookup(1), [[A, 1], [B, 1]])
+  \end{minted}
+
+  \caption{Pseudo-code test that shows the expected behavior for adding indices
+  with existing values.}
+\end{listing}
+
+\subsection{Retrieving values}
+A stateful map would not be useful without a method for retrieving data, which
+\code{State} provides through \code{State::lookup}. This takes a set of columns
+and a key as its arguments, and make use of a \textbf{single} index to retrieve
+one or more existing values. Each index is held in a separate hash map, and
+retrievals can thus be completed in constant time.
+
+That \code{State::lookup} can return more than one value is an important
+distinction from most key-value stores, and is absolutely crucial in
+implementing secondary indices. Without it \code{State} would only be able to
+serve as an index structure for \textit{unique primary keys}.
+
+\subsection{Inserting values}
+Naturally, to be able to read anything in the first place, we first need to
+insert data into our stateful data structure. This is done through the
+\code{State::insert} method, which takes a single row as its argument.
+\code{State::insert} is responsible for updating every index in \code{State},
+and has to loop through and insert a pointer for each included index.
+
+\subsection{Removing values}
+Similar to insertions, removals have to update all indices. Contrary to what one
+might expect, \code{State::remove} takes a single row as argument, and not a
+key. This is due to how \code{State} is used in Soup: as an internal storage
+unit for partially and fully materialized nodes alike. While it might make sense
+for a base node to only delete rows by key, other nodes might need support for
+deleting a single row, regardless of if its key is unique or not. No matter,
+translating \code{remove(row)} to \code{remove(key)} is trivial, as shown in
+listing~\ref{lst:removals}.
+
+\begin{listing}[H]\label{lst:removals}
+  \begin{minted}[frame=lines]{rust}
+state = State()
+state.add_key([0])
+state.insert([A, 1])
+
+row = state.lookup(A)
+state.remove(row)
+  \end{minted}
+
+  \caption{Deleting a row from a base node in Soup.}
+\end{listing}
+
+\subsection{Updating values}
+In a similar vein to how \code{State} does not have a method for removing by
+key, \code{State} does not include a method for updating a single row. Updates
+are instead handled by the base node's logic, by first emitting a negative
+record---to delete the existing row---followed by a positive one to insert the
+new value.
+
+\section{Requirements}
+Random access memory is, and has been for years now, fast. Durable storage is
+undergoing a similar transformation with the recent introduction of NVMe
+SSDs~\cite{nvme}, but is still orders of magnitudes slower than RAM.\@ This
+means that while introducing persistent storage into parts of the Soup equation
+comes with many benefits, increased performance is not likely to be one of them.
+Rather, the goal will be to maintain the existing performance characteristics,
+while still achieving our three main goals.
+
+\subsection{Write throughput}
+Backfills of missing state, replays, go through the regular update paths in the
+Soup data-flow graph. An increase in processing latency at the base nodes would
+not only reduce the write throughput, but also have a significant impact on
+reads that require a replay to complete.
+
+\subsection{Point query performance}
+Base node queries should be a seldom occurrence, as most queries should be
+served by nodes further down the graph. Still, when a query eventually makes it
+all the way up to the base nodes, it is important that it can be completed fast
+enough to not significantly slow down the total read throughput of the system.
+Slightly higher latency is on the other hand to be expected, we are after all
+comparing persistent storage to an in-memory hash map.
+
+\subsection{Support both primary and secondary indices}
+Similar to Soup's existing \code{State} implementation, a durable replacement
+has to support mapping a single key to multiple values, \ie secondary indices.
+
+\section{Embedding an existing storage engine}
+
+\section{Persistent State with SQLite}
+
+\section{Persistent State with RocksDB}
