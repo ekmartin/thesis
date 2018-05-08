@@ -82,7 +82,7 @@ assert_equal(state.lookup(1), [[A, 1], [B, 1]])
   with existing values.}
 \end{listing}
 
-\subsection{Retrieving values}
+\subsection{Retrieving rows}
 A stateful map would not be useful without a method for retrieving data, which
 \code{State} provides through \code{State::lookup}. This takes a set of columns
 and a key as its arguments, and make use of a \textbf{single} index to retrieve
@@ -94,14 +94,14 @@ distinction from most key-value stores, and is absolutely crucial in
 implementing secondary indices. Without it \code{State} would only be able to
 serve as an index structure for \textit{unique primary keys}.
 
-\subsection{Inserting values}
+\subsection{Inserting rows}
 Naturally, to be able to read anything in the first place, we first need to
 insert data into our stateful data structure. This is done through the
 \code{State::insert} method, which takes a single row as its argument.
 \code{State::insert} is responsible for updating every index in \code{State},
 and has to loop through and insert a pointer for each included index.
 
-\subsection{Removing values}
+\subsection{Removing rows}
 Similar to insertions, removals have to update all indices. Contrary to what one
 might expect, \code{State::remove} takes a single row as argument, and not a
 key. This is due to how \code{State} is used in Soup: as an internal storage
@@ -124,14 +124,14 @@ state.remove(row)
   \caption{Deleting a row from a base node in Soup.}
 \end{listing}
 
-\subsection{Updating values}
-In a similar vein to how \code{State} does not have a method for removing by
-key, \code{State} does not include a method for updating a single row. Updates
-are instead handled by the base node's logic, by first emitting a negative
+\subsection{Updating rows}
+Similar to how \code{State} does not have a method for removing by key,
+\code{State} does not include a method for updating a single row. Updates are
+instead handled by the base node's logic, by first emitting a negative
 record---to delete the existing row---followed by a positive one to insert the
 new value.
 
-\section{Requirements}
+\section{Requirements}\label{sec:requirements}
 Random access memory is, and has been for years now, fast. Durable storage is
 undergoing a similar transformation with the recent introduction of NVMe
 SSDs~\cite{nvme}, but is still orders of magnitudes slower than RAM.\@ This
@@ -179,7 +179,7 @@ making use of existing database systems to test performance assumptions, which
 is exactly what this thesis will do: first using SQLite, and later using
 RocksDB.\@
 
-\subsection{State Interface}
+\subsection{State Interface}\label{sec:trait}
 Before diving into the individual \code{State} operations, we need to pave the
 way for the possibility of even having two different state implementations: the
 existing in-memory implementation, and the new persistent storage variant, from
@@ -312,7 +312,6 @@ pub enum LookupResult<'a> {
 \end{listing}
 
 \subsubsection{Using \code{LookupResult}}
-
 Introducing the potential of a returned row being either \code{Borrowed} or
 \code{Owned} has its downsides. For one, callers would have to handle both
 branches, as the \textit{type} contained in a borrowed value is different from
@@ -369,5 +368,153 @@ if let Some(row) = rows.into_iter().next() {
 \todo{include a more formal specification of how this works?}
 
 \section{Persistent State with SQLite}
+The first iteration towards a durable state implementation uses SQLite as its
+storage engine. Described in section~\ref{sec:sqlite}, SQLite is a well-tested,
+heavily used system with a track record in everything from applications to other
+databases. SQLite uses B+trees internally---a reasonable, no frills data
+structure with easy-to-reason about performance guarantees. This makes it useful
+for a first prototype, and will help us answering the question of whether a
+B+tree based \code{PersistentState} is feasible following the requirements
+defined in~\ref{sec:requirements}. We will use the Rusqlite~\cite{rusqlite}
+library for calling into SQLite from Rust.
+
+\subsection{Schema}
+
+SQLite is an embedded database, and requires no inter-process communication to
+function. When persisting data, SQLite writes directly to durable files. This
+requires exclusive locks to be held while writing (see~\ref{sec:sqlite-locks}),
+eliminating the possibility of simultaneous updates from parallel locations to
+the same database. This is not an issue for Soup and \code{PersistentState}.
+Soup's \code{State} instances are completely standalone, and each
+\code{PersistentState} instance can operate against a separate SQLite database,
+avoiding the need for locks altogether.
+
+SQLite---like SQL databases in general---require a strict schema to be defined
+at all times. How this schema looks is usually a result of what kind of queries
+a database needs to respond to, which in Soup's case depends on the indices a
+specific \code{State} instance has been given responsibility for. Each column in
+a Soup index will be given a column in the SQLite table, allowing flexible read
+queries on any of the given indices. The row itself will be stored in a separate
+column, serialized using \code{bincode} (see~\ref{sec:bincode}).
+
+\subsection{Adding indices}
+
+Each call to \code{State::add\_key} sets up that specific \code{State} instance
+for queries on the given set of columns. This primarily involves extending our
+SQLite schema with the newly given columns, while creating an actual SQLite
+index on the \textit{column combination} itself. The latter is not strictly
+necessary: SQLite is able to retrieve data for any columns, regardless of
+existing indices. The performance would be exceedingly poor however, as it would
+require scanning the entire table.
+
+As an example, consider a Soup base node with the three columns \code{(a, b,
+c)}. Queries further down the graph dictate that the base node needs to be able
+to efficiently read rows by the columns \code{(a, b)}, and by only \code{c}.
+After a series of inserts, our SQLite table for the base node's
+\code{PersistentState} might look something like table~\ref{table:sqlite}.
+
+\begin{table}[H]\label{table:sqlite}
+  \centering
+  \begin{tabular}{l l l l}
+    \toprule
+    \textbf{\code{a}} & \textbf{\code{b}} & \textbf{\code{c}} & \textbf{\code{row}} \\ \midrule
+    1 & cat & norway & \code{bincode(1, cat, norway)}   \\ \midrule
+    2 & dog & sweden & \code{bincode(2, dog, sweden)}   \\ \midrule
+    3 & fish & denmark & \code{bincode(3, fish, denmark)} \\ \bottomrule
+  \end{tabular}
+
+  \caption{\
+    An underlying SQLite table in \code{PersistentStore} after a few inserts.
+    \code{bincode()} is used to signify that the value is serialized in the
+    bincode binary serialization format.
+  }
+\end{table}
+
+\subsection{Retrieving rows}
+
+After the hard work of building the indices has completed, a myriad of rows is
+only a \code{SELECT}-statement away. \code{PersistentState::lookup} takes a set
+of columns and values for those columns as arguments, which are then translated
+a \code{SELECT}-query. Considering the example in our previous section, the key
+\code{(1, cat)} for the columns \code{(a, b)} would result in a query on the
+form of \code{SELECT row FROM store WHERE index\_0 = 1 AND index\_1 = "cat"},
+which SQLite can then complete in a timely manner due to the index on \code{(a,
+b)}.
+
+\subsection{Inserting rows}
+
+Given a vector of values, \code{PersistentState} has to first extract the
+columns necessary for its current set of indices and so that their values can be
+translated to SQLite friendly types. These can then be used to build an
+\code{INSERT}-query on the form of \code{INSERT INTO store (index\_0, index\_1,
+row) VALUES (\ldots)}, where \code{row} is a binary representation of the entire
+vector, serialized using \code{bincode}.
+
+\subsection{Removing rows}
+
+Similar to lookups, removals need to first build a \code{WHERE}-clause by
+extracting the index column values from the target row, which can then be used
+to perform a \code{DELETE}-statement on the form of \code{DELETE FROM store
+WHERE index\_0 = 1 AND index\_1 = "cat"}.
+
+\subsection{Processing insertions and removals}
+
+All mutations need to be done within a transaction in SQLite, and operations
+performed without an explicit transactions are implicitly given one. Performing
+a single transaction is potentially expensive in SQLite, especially with strong
+durability guarantees, where each transaction will incur a \code{fsync}
+operation to make sure updates are successfully persisted before returning.
+
+Instead, \code{PersistentState} batches all mutations required for a single
+packet (per base node) into one transaction. This is done using the
+\code{State::process\_records} method described in~\ref{sec:trait}, as shown in
+listing~\ref{sec:process-sqlite}.
+
+\begin{listing}[H]\label{lst:process-sqlite}
+  \begin{minted}[frame=lines]{rust}
+fn process_records(&mut self, records: &Records) {
+    let transaction = self.connection.transaction().unwrap();
+    for r in records.iter() {
+        match *r {
+            Record::Positive(ref r) => {
+                Self::insert(r.clone(), &self.indices, &transaction);
+            }
+            Record::Negative(ref r) => {
+                Self::remove(r, &self.indices, &transaction);
+            }
+        }
+    }
+
+    transaction.commit().unwrap();
+}
+  \end{minted}
+
+  \caption{Multiple insertions and removals are wrapped in a transaction.}
+\end{listing}
+
+
+\subsection{Counting rows}
+
+An accurate count of the total rows in the database can be retrieved using an
+SQL \code{COUNT}-query: \code{SELECT COUNT(row) FROM store}.
+
+\subsection{Replacing the Soup write-ahead log}
+
+Soup already writes all updates to durable storage in the form of a write-ahead
+log. After an unexpected failure, Soup replays entries in the log to recover its
+state to what it was prior to the crash. This is far from optimal for long
+running applications (which most databases are), where recovery time would
+simply continue to grow unbounded. Relying on SQLite for durability would let
+Soup recover directly from SQLite's database files---a much faster operation
+than replaying the entire log.
+
+Modern SQLite versions make use of a write-ahead log to ensure durability
+(see~\ref{sec:sqlite-wal}) while maintaining high write performance. Relying on
+this instead of Soup's WAL requires some refactoring however: up until now Soup
+has sent out acknowledgments of writes as soon as the write is merged into a
+batch by the group commit protocol, prior to inserting the packet itself into
+Soup's data flow graph. Materialization into \code{PersistentState} happens
+after this on the other hand, while the packet is being processed by a base
+node.
 
 \section{Persistent State with RocksDB}

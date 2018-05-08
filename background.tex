@@ -1,10 +1,15 @@
 \chapter{Background}\label{chap:background}
 
 \section{Soup}
+
 \section{Rust}
+\subsection{Foreign Function Interface}
+
 \section{Recovery}
 
-\section{SQLite}
+\section{bincode}
+
+\section{SQLite}\label{sec:sqlite}
 SQLite~\cite{sqlite} is by far the most widely deployed database ever written.
 Used in everything from smart phones to cars, with an estimated user count in
 the magnitude of multiple billion users, SQLite is everywhere\footnote{Who
@@ -51,7 +56,7 @@ on-disk data structure, with pointers from the leaf nodes, and by introducing
 sibling pointers at the leaf node level, range queries can be efficiently
 executed by walking the bottom of the tree horizontally.
 
-\subsection{Rollback Journal}
+\subsection{Rollback Journal}\label{sec:sqlite-locks}
 SQLite implements support for atomic transactions through the use of a rollback
 journal. A historic copy of values prior to changes are kept in a separate
 file---the rollback journal---so that they can be copied back to the actual
@@ -130,8 +135,8 @@ SQLite also provides a command-line interface, which can be used to directly
 read from and modify a database with SQL statements.
 
 \subsection{SQLite from Rust}
-Accessing SQLite from Rust can be done through the excellent \code{rusqlite}
-library\footnote{rusqlite: \url{https://github.com/jgallagher/rusqlite}}, which
+Accessing SQLite from Rust can be done through the excellent \code{Rusqlite}
+library~\cite{rusqlite}, which
 provides a Rust API on top of SQLite's C-bindings.
 
 \begin{listing}[H]\label{lst:sqlite}
