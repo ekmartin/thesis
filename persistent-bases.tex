@@ -222,28 +222,28 @@ pub trait State {
 
 As code is often more succinct than prose, a subset of the \code{State} trait is
 shown in listing~\ref{lst:state}. The rest of the methods have been omitted for
-clarity, as they are only relevant to partially materialized state, which base
-nodes never are (they are always fully materialized). Similarly, some of the
-methods take in extra arguments related to partial state---omitted here.
+clarity, as they are only relevant to nodes that can be partially
+materialized---not base nodes. Similarly, some of the methods take in extra
+arguments related to partial state---omitted here.
 
 Comparing the trait in listing~\ref{lst:state} to the operations described
 in~\ref{sec:in-memory-state} you might notice that the insert and removal
 operations are gone. These have been abstracted into a higher level method:
 \code{process\_records}. Every packet in Soup has the potential to contain more
 than one record by being a merged packet, due to \textit{group commit}
-(see~\ref{sec:group-commit}). This meant that the function responsible for
+(see~\ref{sec:group-commit}). Because of this, the function responsible for
 materializing records in a node's \code{State} would go through a packet's
 records, individually calling methods like \code{State::insert} and
-\code{State::remove}.
-This is completely okay for an in-memory implementation, but not as good for
-something that might potentially write to slower, durable storage. Here batching
-is key, and an extra indicator to the underlying methods that they can perform
-operations in one go is crucial.
+\code{State::remove}. This is completely valid for an in-memory implementation,
+where each operation has the same cost---without any initial overhead. This is
+not the case for writes to potentially slower, durable storage. Here batching is
+key, and an indicator to the underlying methods that they can perform operations
+in one go is crucial.
 
 \subsection{Retrieving rows from \code{State}}
 While other languages might implement memory safety through garbage collection
-or manual memory management, Rust does the same through ownership (as described
-in~\ref{sec:rust}). Whenever a value goes out of scope, it is deallocated. How
+or manual memory management, Rust does the same through ownership, as described
+in~\ref{sec:rust}. Whenever a value goes out of scope, it is deallocated. How
 do you know when a value goes out of scope? In a garbage collected system, this
 happens when there are no longer any references to the value. In Rust, each
 value only has one owner, and any references need to live \textbf{at least} as
@@ -258,6 +258,9 @@ counted\footnote{\url{https://doc.rust-lang.org/std/rc/index.html}} values,
 allowing shared ownership of a single value by counting owners at runtime.
 Subsequent retrievals of the same value always point to the same memory
 location, with the source of truth being stored in \code{State}.
+
+\todo{add a figure showing the difference between retrieving rows from memory
+and from durable storage}
 
 What if, on the other hand, a row does not exist in memory to begin with? This
 would be the case when data is retrieved from durable storage: after reading a
@@ -307,6 +310,63 @@ pub enum LookupResult<'a> {
     caller is responsible for retaining ownership of the value.
   }
 \end{listing}
+
+\subsubsection{Using \code{LookupResult}}
+
+Introducing the potential of a returned row being either \code{Borrowed} or
+\code{Owned} has its downsides. For one, callers would have to handle both
+branches, as the \textit{type} contained in a borrowed value is different from
+the \textit{type} in an owned one. In the former, callers would always have to
+clone the value to hand it over to someone else, whereas in the latter, they
+could simply \textit{move} it out. The difference here comes from the
+expectations of the value: a borrowed value implies that someone wants to retain
+ownership of it---\eg it has to be cloned to give ownership to someone
+else---while an owned value is the responsibility of the caller.
+
+\begin{listing}[H]\label{lst:cow}
+  \begin{minted}[frame=lines]{rust}
+if rows.len() > 0 {
+  match rows {
+    RecordResult::Owned(mut rows) => {
+      out.push(Record::Negative(rows.swap_remove(0)))
+    }
+    RecordResult::Borrowed(rows) => {
+      out.push(Record::Negative((*rows[0]).clone()))
+    }
+  }
+}
+  \end{minted}
+  \caption{\
+    With \code{RecordResult}, returned values can be either \code{Borrowed} or
+    \code{Owned}, making callers responsible for handling both use cases. Here
+    a negative record---used to signal to descendant nodes that this value
+    should be invalidated---is emitted using the first row as its value.
+  }
+\end{listing}
+
+As is often the case, this can be simplified by looking at what the callers are
+actually using the returned values for. The unpacked \code{rows} variable in
+listing~\ref{lst:cow} is---as the name implies---a list of rows. Taking this
+collection, and \textit{iterating} over either all of, or a subset of, the rows,
+before returning a new iterator over the potentially modified values, was by far
+the most common operation. Instead of delegating the responsibility for doing so
+to the callers, this can be implemented on \code{RecordResult} itself, greatly
+simplifying use cases like listing~\ref{lst:cow}.
+
+\begin{listing}[H]\label{lst:cow}
+  \begin{minted}[frame=lines]{rust}
+if let Some(row) = rows.into_iter().next() {
+    out.push(Record::Negative(row.into_owned()));
+}
+  \end{minted}
+  \caption{\
+    The option of turning a \code{RecordResult} into an iterator is used to
+    simplify the logic from listing~\ref{lst:cow}.
+  }
+\end{listing}
+
+\todo{write about IntoIterator and how it yields cows.} \\
+\todo{include a more formal specification of how this works?}
 
 \section{Persistent State with SQLite}
 
