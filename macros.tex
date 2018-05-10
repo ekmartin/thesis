@@ -1,3 +1,14 @@
+% When there are underscores in the PDF output by the svg package,
+% they need to be escaped.
+% Example:
+% \escapeus{\includesvg{...}}
+\makeatletter
+    \DeclareRobustCommand*{\escapeus}[1]{%
+        \begingroup\@activeus\scantokens{#1\endinput}\endgroup}
+    \begingroup\lccode`\~=`\_\relax
+        \lowercase{\endgroup\def\@activeus{\catcode`\_=\active \let~\_}}
+\makeatother
+
 \newcommand{\note}[1]{{\color{olive}\sffamily #1}}
 \newcommand{\todo}[1]{{\color{purple}\sffamily[TODO:\@ #1]}}
 \newcommand{\eg}{\textit{e.g.},{} }

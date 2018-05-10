@@ -9,6 +9,8 @@
 
 \section{bincode}
 
+\section{Profiling}
+
 \section{SQLite}\label{sec:sqlite}
 SQLite~\cite{sqlite} is by far the most widely deployed database ever written.
 Used in everything from smart phones to cars, with an estimated user count in
@@ -71,7 +73,7 @@ concurrent access to their database (\eg web applications backends with multiple
 active users): only a single write operation could be performed at the time.
 This is not the case with reads, which hold shared locks.
 
-\subsection{Write-ahead Log}
+\subsection{Write-ahead Log}\label{sec:sqlite-wal}
 In version 3.7.0, SQLite introduced an alternative to the traditional rollback
 journal: the write-ahead log~\cite{sqlite-wal}. Maintaining the same atomicity
 and durability guarantees, the use of a WAL significantly improves write

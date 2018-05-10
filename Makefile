@@ -8,4 +8,5 @@ watch:
 
 clean:
 	rm -f *-blx.bib
+	rm -rf {svg-inkscape,_minted-report}
 	rm -f *.{aux,bak,bbl,blg,dvi,fls,log,out,toc,pdf,fdb_latexmk,xml}

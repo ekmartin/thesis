@@ -61,7 +61,7 @@ specific set of columns.
 New indices have to be \textbf{built}, as they are expected to answer queries
 for data that has already been inserted, right away.
 
-\begin{listing}[H]\label{lst:existing-index}
+\begin{listing}[H]
   \begin{minted}[frame=lines]{rust}
 state = State()
 // Initialize `state` with an index on the first column:
@@ -79,7 +79,7 @@ assert_equal(state.lookup(1), [[A, 1], [B, 1]])
   \end{minted}
 
   \caption{Pseudo-code test that shows the expected behavior for adding indices
-  with existing values.}
+  with existing values.}\label{lst:existing-index}
 \end{listing}
 
 \subsection{Retrieving rows}
@@ -111,7 +111,7 @@ deleting a single row, regardless of if its key is unique or not. No matter,
 translating \code{remove(row)} to \code{remove(key)} is trivial, as shown in
 listing~\ref{lst:removals}.
 
-\begin{listing}[H]\label{lst:removals}
+\begin{listing}[H]
   \begin{minted}[frame=lines]{rust}
 state = State()
 state.add_key([0])
@@ -121,7 +121,7 @@ row = state.lookup(A)
 state.remove(row)
   \end{minted}
 
-  \caption{Deleting a row from a base node in Soup.}
+  \caption{Deleting a row from a base node in Soup.}\label{lst:removals}
 \end{listing}
 
 \subsection{Updating rows}
@@ -191,7 +191,7 @@ the \code{State} variants. This helps maintain the current status quo where
 need to be aware of the location their data is getting stored---they can simply
 interact with the \code{State} trait as a black box\@.
 
-\begin{listing}[H]\label{lst:state}
+\begin{listing}[H]
   \begin{minted}[frame=lines]{rust}
 pub trait State {
     /// Add an index keyed by the given columns.
@@ -217,7 +217,7 @@ pub trait State {
 
   \caption{\
     A segment of the main methods defined in our \code{State} trait.
-  }
+  }\label{lst:state}
 \end{listing}
 
 As code is often more succinct than prose, a subset of the \code{State} trait is
@@ -284,7 +284,7 @@ that the value does not exist, it simply means that this particular \code{State}
 does not have it, while a \code{State} instance further up the data-flow graph
 does.
 
-\begin{listing}[H]\label{lst:existing-index}
+\begin{listing}[H]
   \begin{minted}[frame=lines]{rust}
 // Before:
 pub enum LookupResult<'a> {
@@ -308,7 +308,7 @@ pub enum LookupResult<'a> {
     would always result in a borrowed, reference counted value. Now that only
     happens for reads from \code{MemoryState}---with \code{PersistentState} the
     caller is responsible for retaining ownership of the value.
-  }
+  }\label{lst:existing-index}
 \end{listing}
 
 \subsubsection{Using \code{LookupResult}}
@@ -322,7 +322,7 @@ expectations of the value: a borrowed value implies that someone wants to retain
 ownership of it---\eg it has to be cloned to give ownership to someone
 else---while an owned value is the responsibility of the caller.
 
-\begin{listing}[H]\label{lst:cow}
+\begin{listing}[H]
   \begin{minted}[frame=lines]{rust}
 if rows.len() > 0 {
   match rows {
@@ -340,7 +340,7 @@ if rows.len() > 0 {
     \code{Owned}, making callers responsible for handling both use cases. Here
     a negative record---used to signal to descendant nodes that this value
     should be invalidated---is emitted using the first row as its value.
-  }
+  }\label{lst:cow}
 \end{listing}
 
 As is often the case, this can be simplified by looking at what the callers are
@@ -352,7 +352,7 @@ the most common operation. Instead of delegating the responsibility for doing so
 to the callers, this can be implemented on \code{RecordResult} itself, greatly
 simplifying use cases like listing~\ref{lst:cow}.
 
-\begin{listing}[H]\label{lst:cow}
+\begin{listing}[H]
   \begin{minted}[frame=lines]{rust}
 if let Some(row) = rows.into_iter().next() {
     out.push(Record::Negative(row.into_owned()));
@@ -361,7 +361,7 @@ if let Some(row) = rows.into_iter().next() {
   \caption{\
     The option of turning a \code{RecordResult} into an iterator is used to
     simplify the logic from listing~\ref{lst:cow}.
-  }
+  }\label{lst:cow-better}
 \end{listing}
 
 \todo{write about IntoIterator and how it yields cows.} \\
@@ -413,7 +413,7 @@ to efficiently read rows by the columns \code{(a, b)}, and by only \code{c}.
 After a series of inserts, our SQLite table for the base node's
 \code{PersistentState} might look something like table~\ref{table:sqlite}.
 
-\begin{table}[H]\label{table:sqlite}
+\begin{table}[H]
   \centering
   \begin{tabular}{l l l l}
     \toprule
@@ -427,7 +427,7 @@ After a series of inserts, our SQLite table for the base node's
     An underlying SQLite table in \code{PersistentStore} after a few inserts.
     \code{bincode()} is used to signify that the value is serialized in the
     bincode binary serialization format.
-  }
+  }\label{table:sqlite}
 \end{table}
 
 \subsection{Retrieving rows}
@@ -470,7 +470,7 @@ packet (per base node) into one transaction. This is done using the
 \code{State::process\_records} method described in~\ref{sec:trait}, as shown in
 listing~\ref{sec:process-sqlite}.
 
-\begin{listing}[H]\label{lst:process-sqlite}
+\begin{listing}[H]
   \begin{minted}[frame=lines]{rust}
 fn process_records(&mut self, records: &Records) {
     let transaction = self.connection.transaction().unwrap();
@@ -489,7 +489,7 @@ fn process_records(&mut self, records: &Records) {
 }
   \end{minted}
 
-  \caption{Multiple insertions and removals are wrapped in a transaction.}
+  \caption{Multiple insertions and removals are wrapped in a transaction.}\label{lst:process-sqlite}
 \end{listing}
 
 
@@ -502,7 +502,7 @@ SQL \code{COUNT}-query: \code{SELECT COUNT(row) FROM store}.
 
 Soup already writes all updates to durable storage in the form of a write-ahead
 log. After an unexpected failure, Soup replays entries in the log to recover its
-state to what it was prior to the crash. This is far from optimal for long
+state to what it was prior to crashing. This is far from optimal for long
 running applications (which most databases are), where recovery time would
 simply continue to grow unbounded. Relying on SQLite for durability would let
 Soup recover directly from SQLite's database files---a much faster operation
@@ -510,11 +510,153 @@ than replaying the entire log.
 
 Modern SQLite versions make use of a write-ahead log to ensure durability
 (see~\ref{sec:sqlite-wal}) while maintaining high write performance. Relying on
-this instead of Soup's WAL requires some refactoring however: up until now Soup
-has sent out acknowledgments of writes as soon as the write is merged into a
-batch by the group commit protocol, prior to inserting the packet itself into
+SQLite's WAL instead of Soup's requires some refactoring however: up until now
+Soup has sent out acknowledgments of writes as soon as the write is merged into
+a batch by the group commit protocol, prior to inserting the packet itself into
 Soup's data flow graph. Materialization into \code{PersistentState} happens
 after this on the other hand, while the packet is being processed by a base
-node.
+node. This comes with a minor write latency penalty regardless of the
+\code{State} implementation, as more work needs to happen before an
+acknowledgment can be sent.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{graphs/sqlite-wal-sjrn}
+  \caption{\
+    Write-only throughput measured using the \code{vote} benchmark. \code{log}
+    relies on Soup's WAL for durability and stores base node state in-memory.
+    \code{sqlite\_wal} uses SQLite for durability, storing all base node state
+    on persistent storage.
+  }\label{graph:sqlite-wal}
+\end{figure}
+
+Intuitively, one might expect writes to SQLite to be at least somewhat slower
+than writes to Soup's regular write-ahead log, simply from the fact that the
+latter needs to write less data to disk. At the same time, the WAL
+implementation in SQLite is surely far more sophisticated than Soup's. SQLite's
+WAL consists of a series of frames, allocated ahead of time to avoid unnecessary
+resizing at every insertion. Soup's WAL is on the other hand purely an
+ever-growing sequential file, where entries are appended to the end of the file
+for each new packet. So why---as shown in figure~\ref{graph:sqlite-wal}---is
+SQLite so much slower?
+
+\subsubsection{Checkpointing}
+
+With an arsenal of profiling tools at our disposal, guessing is unnecessary. A
+flame graph built from profiling data recorded with \code{perf} quickly
+highlights the two main culprits: checkpoints and B-tree updates. As mentioned
+in section~\ref{sec:sqlite-checkpoints}, SQLite automatically transfers data
+from the WAL to its main database file once the WAL exceeds a certain threshold.
+Checkpointing---similar to everything else in SQLite---is a synchronous
+operation, incurring a significant latency penalty once it happens. Regardless,
+checkpointing is a necessary evil. Up until the point of a checkpoint, reads
+have to refer to both the content in the WAL and the content in the main
+database. Delaying the automatic checkpoint operation does not make much of a
+difference either, as it results in more content to copy over when the
+checkpoint finally occurs.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{sqlite-wal-flame}
+  \caption{A flame graph highlighting time consuming functions in
+  \code{PersistentState}.}\label{fig:sqlite-wal}
+\end{figure}
+
+Does checkpoints have to happen synchronously, before a write acknowledgment is
+sent to a client? In reality, they do not: taking a checkpoint does not make any
+difference in terms of durability. Instead, \code{PersistentState} can issue a
+checkpoint manually after a certain amount of time, but \textit{after}
+acknowledging any outstanding writes. This had a minor effect on throughput,
+taking it from a measly 27k ops/s, to at least 42k ops/s---still far too slow.
+The checkpoints still happen synchronously, pausing processing at that specific
+\code{PersistentState} instance for a significant amount of time instance for a
+significant amount of time.
+
+That leads to the question of whether checkpoints have to happen in the same
+thread as regular processing altogether. The SQLite manual mentions the
+possibility of taking checkpoints in a separate thread, by incurring manual
+checkpoints using the \\ \code{sqlite3\_wal\_checkpoint\_v2} API.\@ While this
+sounds promising, it only helps if regular processing can continue while the
+checkpoint is being taken. SQLite describes four different checkpoint
+modes\footnote{\url{https://www.sqlite.org/c3ref/wal_checkpoint_v2.html}}:
+
+\begin{itemize}
+  \item \code{SQLITE\_CHECKPOINT\_PASSIVE}: Checkpoints as many frames as
+    possible without taking any locks.
+  \item \code{SQLITE\_CHECKPOINT\_FULL}: Wait until any current database
+    operations are finished, then hold an exclusive write-lock while
+    checkpointing.
+  \item \code{SQLITE\_CHECKPOINT\_RESTART}: Similar to the previous mode, but
+    waits with finishing the checkpoint until all readers are accessing the
+    main database file---and not the WAL---forcing any new writers to restart
+    the WAL.\@
+  \item \code{SQLITE\_CHECKPOINT\_TRUNCATE}: Same as the \code{RESTART} mode,
+    except it also truncates the log file before restarting.
+\end{itemize}
+
+While the last three checkpoint modes hold write locks throughout the duration
+of the checkpoint, effectively resulting in the same operation as a synchronous
+checkpoint, the \code{PASSIVE} mode does not. It also has the possibility of not
+checkpointing any frames whatsoever either though, which is not very helpful.
+This makes it heavily workload dependent, as it requires a low enough throughput
+to allow ``breaks'' in the write processing where a checkpoint can happen. Without
+that being the case the WAL will simply continue to grow.
+
+\subsubsection{Updating indices}
+
+The other issue highlighted in the flame graph in
+figure~\ref{fig:sqlite-wal} is index updates. While writing to a
+write-ahead log is purely sequential, updating B-trees is not. This is a
+significant difference from Soup's write-ahead log, where writes to the log only
+require sequential writes, instead of the random reads \textbf{and} writes
+caused by inserting into a B-tree. Even if maintaining SQLite's B-tree indices
+could be postponed to the checkpoint stage (which would likely degrade read
+performance), this would simply lead to a longer checkpoint, which, as the
+previous section points out, still results in pauses in regular write
+processing.
+
+\subsection{Relaxing SQLite's durability guarantees}
+
+To ensure durability, SQLite waits until writes have been fully persisted to
+durable storage before returning. Depending on the underlying storage medium,
+this might come with a quite hefty latency penalty, as the previous sections
+have shown. Let us now move to the other end of the spectrum, and investigate
+how SQLite fares with minimal durability guarantees. Instead, we will rely on
+Soup's regular write-ahead log for durability, and only use SQLite to avoid
+having to store base node state in memory.
+
+\subsubsection{Synchronization}
+
+Whereas the previous experiments ran with SQLite's \code{synchronous} option set
+to \code{FULL}---which ensures that all writes are safely persisted before
+returning---we will now make use of \code{synchronous = OFF} instead, which
+should significantly decrease write latency to SQLite.
+
+\subsubsection{Foregoing atomicity}
+
+SQLite provides two main options to ensure atomicity: a rollback journal
+(section~\ref{sec:sqlite-locks}) and a write-ahead log
+(section~\ref{sec:sqlite-wal}). Whereas the previous section made use of the
+latter, we will now try a third option: no journal at all. Similar to
+\code{synchronous = OFF} this is far from safe in the event of crashing, but
+is altogether a more useful comparison while relying on Soup's WAL for
+durability. If this is still too slow, then chances are it is going to be hard
+to achieve our predefined requirements using SQLite no matter what.
+
+\subsubsection{Results}
+
+Whereas our SQLite WAL experiment only reached about 40k writes/s, the current
+setup is at least able to push past 110k writes/s. While an improvement, this
+is still far slower than Soup's regular write-ahead log.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{graphs/sqlite-soup-log}
+  \caption{\
+    Write-only throughput measured using the \code{vote} benchmark, comparing
+    in-memory base nodes to persistent base nodes using SQLite---both examples
+    use Soup's WAL for durability.
+  }\label{graph:sqlite-soup-log}
+\end{figure}
 
 \section{Persistent State with RocksDB}
