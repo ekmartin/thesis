@@ -659,4 +659,35 @@ is still far slower than Soup's regular write-ahead log.
   }\label{graph:sqlite-soup-log}
 \end{figure}
 
+\todo{could write about the (failed) attempt of batching more writes together}
+
+\subsubsection{Closing remarks}
+
+The fact that SQLite works well out of the box without a lot of tuning is
+definitely one of its strengths. Regardless, there are a few options that can be
+tweaked, both ahead of compilation and at runtime. While disabling SQLite
+features not needed for \code{PersistentState} and removing all mutex code had a
+slight positive impact, the improvements were far from significant enough to
+make a solid dent in the total throughput.
+
+Maintaining SQLite indices---and thus randomly reading from and writing to
+disk---on the main path is simply too slow. Does this imply that directly
+maintaining B-tree on-disk index structures built specifically for Soup would
+perform poorly as well? Possibly. While SQLite does have a lot of overhead
+needed to support a wide range of features, and an even wider array of systems,
+profiling clearly shows that the bulk of processing time is spent interacting
+with durable storage as a result of B-tree maintenance.
+
+What alternatives does this leave us? One option would be to only write to
+durable storage from background threads, avoiding the hit in latency that comes
+with writing to and reading from disk. Instead, writes to \code{PersistentState}
+could fill up an in-memory queue structure, which would then later be flushed to
+persistent storage by background threads. Lookups could then read from both the
+in-memory queue and the slower---but persistent---SQLite. This is effectively
+the structure of a log-structured merge-tree, described in
+section~\ref{sec:rocksdb}, where writes are initially kept in an in-memory
+buffer, and later flushed to disk by background workers. That means that instead
+of re-inventing the wheel that is LSM-trees, we can embed a storage engine that
+already makes use of such a data structure internally: RocksDB.
+
 \section{Persistent State with RocksDB}
