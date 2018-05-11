@@ -267,7 +267,7 @@ tree structure can be done in $ O(\log n) $ through a binary search.
 Going through a potentially large amount of SS-tables on disk is costly however,
 and RocksDB employs a series of tricks to avoid doing so.
 
-\subsection{Compactions}
+\subsection{Compactions}\label{sec:compactions}
 To maintain immutability, new SS-tables are always created without modifying
 existing on-disk content. Two writes to the same key can thus co-exist in
 different SS-tables, even if only the last written key is relevant to the

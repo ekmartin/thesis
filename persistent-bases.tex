@@ -678,16 +678,140 @@ needed to support a wide range of features, and an even wider array of systems,
 profiling clearly shows that the bulk of processing time is spent interacting
 with durable storage as a result of B-tree maintenance.
 
-What alternatives does this leave us? One option would be to only write to
-durable storage from background threads, avoiding the hit in latency that comes
-with writing to and reading from disk. Instead, writes to \code{PersistentState}
-could fill up an in-memory queue structure, which would then later be flushed to
-persistent storage by background threads. Lookups could then read from both the
-in-memory queue and the slower---but persistent---SQLite. This is effectively
-the structure of a log-structured merge-tree, described in
-section~\ref{sec:rocksdb}, where writes are initially kept in an in-memory
-buffer, and later flushed to disk by background workers. That means that instead
-of re-inventing the wheel that is LSM-trees, we can embed a storage engine that
-already makes use of such a data structure internally: RocksDB.
-
 \section{Persistent State with RocksDB}
+
+How do we improve upon SQLite's low write throughput? One option would be to
+only write to durable storage from background threads, avoiding the hit in
+latency that comes with writing to and reading from disk. Instead, writes to
+\code{PersistentState} could fill up an in-memory queue structure, which would
+then later be flushed to persistent storage by background threads. Read
+operations could then retrieve data from both the in-memory queue and the
+slower---but persistent---SQLite. This might sound familiar, as it is
+effectively a naive sketch of the log-structured merge-tree data structure
+described in section~\ref{sec:rocksdb}, where writes are initially kept in an
+in-memory buffer and later flushed to disk by background workers. That leaves us
+with a good next step: embedding a storage engine that makes use of LSM-trees
+internally, RocksDB.\@
+
+While RocksDB and its LSM-trees should improve \code{PersistentState}'s write
+throughput, it could at the same time introduce a further penalty to read
+latency. This might not be too problematic though, as reads from
+\code{PersistentState} should be more of a rare occurrence than writes: every
+update Soup sees needs to be persisted to durable storage, whereas only a subset
+of reads need to access \code{PersistentState} at all---most results should be
+served by partial nodes further down the data-flow graph.
+
+\subsection{Secondary Index Scheme}
+
+Whereas SQLite includes support for a large subset of SQL features, RocksDB's
+API is on a lower abstraction level. Limited to the functions necessary to
+maintain a sorted key-value store, implementing support for secondary indices is
+more of a challenge than with SQLite, where support for both primary and
+secondary indices is built in. Building higher level abstractions on top of
+key-value stores is becoming more and more common however, with plenty of
+inspiration to be found in existing projects. Both CockroachDB~\cite{cockroach}
+and MyRocks~\cite{myrocks} implement SQL-like functionality on top of RocksDB,
+with sturdy indexing schemes at the core.
+
+Prior to describing the final implementation, let us first iterate our way
+towards a working index scheme. The next few sections describe separate,
+working, implementations, where each step improves upon the last.
+
+\subsubsection{Collection of rows}
+
+Representing unique indices using a key-value store is fairly straight forward,
+as each key maps to a single value. With secondary indices, this is no longer
+the case, and a single key would need to represent multiple values. With
+key-value stores where subsequent insertions are still retrievable with a single
+read operation this would require no further abstractions. In RocksDB however,
+each insertion effectively overwrites any existing values that might exist for
+that key. So how do we emulate an API mapping a single key to multiple values
+with the tools we have at hand? For a start, we could do exactly that, and store
+multiple values in an array below each key. Insertions would then retrieve the
+array of existing values, append the given value to that array, and write it
+back to the same key---as shown in listing~\ref{lst:collection-secondary}.
+
+\begin{listing}[H]
+  \begin{minted}[frame=lines]{python}
+Insert(key, value):
+  # Retrieve and deserialize existing values:
+  raw_values = Get(key)
+  values = deserialize(raw_values) or []
+
+  # Then, append our new value, serialize the collection and put it back:
+  values += value
+  Put(key, serialize(values))
+  \end{minted}
+
+  \caption{A naive secondary index implementation, where each key contains a
+  collection of values.}\label{lst:collection-secondary}
+\end{listing}
+
+Unfortunately, this comes with the same write performance penalty as SQLite's
+B-tree index structures: each write now has to first perform a random read
+\textit{before} the new value can be written. This completely removes any
+performance benefits we might gain from RocksDB's write-friendly LSM-tree
+structure.
+
+\subsubsection{Merge operator}
+
+In addition to the more common \code{Get} and \code{Put} operations, RocksDB
+supports an atomic read-modify-write operation through the \code{Merge}
+method\footnote{\url{https://github.com/facebook/rocksdb/wiki/Merge-Operator}}.
+This leads to the same result as in our previous implementation---with each key
+mapping to a collection of values---without any random reads while writing.
+Instead, RocksDB considers calls on the form \code{Merge(key, value)} as an
+\textit{intent} to merge the values, and persists it as such. These intents can
+then be processed later, during background compactions (see
+section~\ref{sec:compactions}) and read operations.
+
+\begin{listing}[H]
+  \begin{minted}[frame=lines]{python}
+MergeOperator(key, existing, operations):
+  # Retrieve and deserialize existing values:
+  raw_values = Get(key)
+  values = deserialize(raw_values) or []
+
+  # Then, append all Merge(key, value) operations:
+  for op in operations
+    values += deserialize(op)
+
+  # Finally, serialize and return the new list:
+  serialize(values)
+  \end{minted}
+
+  \caption{A RocksDB merge operator, appending any given values to an array.}\label{lst:merge-fn}
+\end{listing}
+
+This moves some of the work from writing to reading, as a read operation now has
+to find all merge operands and process them before returning. Unfortunately,
+this also introduces an unnecessary amount of serialization. RocksDB does not
+know how to deal with anything but byte streams, and so both the input and
+output to the merge operator has to be serialized, regardless of the fact that
+the final result will have to be deserialized again when read by the caller.
+This could potentially be improved through a smarter serialization scheme, where
+values could be appended to the serialized array without deserialization, but
+let us first consider an alternative without the merge operator altogether.
+
+\subsubsection{Iteration}
+
+Up until now we have considered options where each index value takes up a single
+key, through various methods of making the value portion of a key-value pair
+plural. Instead, we will now modify the key slightly to achieve uniqueness,
+while still retaining the ability to retrieve its corresponding value from the
+original key. The latter is possible through \textit{iteration}. By making sure
+keys that refer to the same index value are placed next to each other we can
+find the first key, and then iterate forward until we reach a separate index
+value. That way, each key only needs to point to a single value, while
+subsequent insertions can function without needing to retrieve any existing
+values.
+
+How do we ensure that multiple keys are placed next to each other, while still
+remaining unique? One way of doing so would be with a monotonically increasing
+sequence number appended to the end of each key, incremented on subsequent
+insertions.
+
+% TODO:
+% The examples will use the same table, containing three columns and two indices:
+% \code{(id, name, country)}, with a primary index on \code{id} and a secondary
+% index on \code{(country)}.
