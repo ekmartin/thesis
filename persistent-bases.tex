@@ -996,17 +996,19 @@ PrefixTransform(raw_key):
 
 \subsection{Separating indices}
 
-Up until now we have not considered the possibility of a collision between
-separate indices. Consider a table with two integer columns and two indices, one
-on each column. How do you separate the different indices? In the example in
-table~\ref{table:colliding}, keys with the value $ 2 $ would cause a collision
-between the two indices.
+The index scheme described so far has glossed over the potential for conflicts
+between indices covering the same amount of columns, with the same types.
+Consider a table with two integer columns---\code{(a, b)}---and an index on each
+column. How do you separate values pointed to by the index on \code{a} from
+values pointed to by the index on \code{b}? In the example shown in
+table~\ref{table:colliding} this would lead to a conflict: both index \code{a}
+and index \code{b} have at least one key with the same value.
 
 \begin{table}[H]
   \centering
   \begin{tabular}{l l}
     \toprule
-    \textbf{\code{a}} & \textbf{\code{b}} \\ \midrule
+    \textbf{a} & \textbf{b} \\ \midrule
     1 & 2 \\ \midrule
     2 & 2 \\ \midrule
   \end{tabular}
@@ -1015,3 +1017,33 @@ between the two indices.
   under a flat key-value space.}\label{table:colliding}
 \end{table}
 
+Both CockroachDB~\cite{cockroach-encoding} and MyRocks~\cite{myrocks-encoding}
+solve this by including a unique index ID in the key (shown in
+table~\ref{table:index-id}). This is an elegant solution with low overhead---a
+small integer value would be enough to cover a large amount of indices. Another
+option would be to put each index in a separate column family---the RocksDB
+equivalent of a table. Whereas a secondary index might have a large amount of
+values prefix, a unique index can have only one. With the option of opening each
+column family with different options, indices can be tuned differently based on
+similar patterns. Keeping a separate column family per index also simplifies the
+rare case where all rows in the system have to be iterated through---all the
+values can be retrieved from the first index.
+
+\todo{write about column families in rocksdb background}
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{l l}
+    \toprule
+    \textbf{key} & \textbf{value} \\ \midrule
+    0-1 & (1, 2) \\ \midrule
+    0-2 & (2, 2) \\ \midrule
+    1-2 & (1, 2) \\ \midrule
+    1-2-\dots & (2, 2) \\ \midrule
+  \end{tabular}
+
+  \caption{\
+    Keys in CockroachDB and MyRocks are prefixed with unique index IDs to
+    prevent collisions.
+  }\label{table:index-id}
+\end{table}
