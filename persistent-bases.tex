@@ -825,7 +825,6 @@ suffixes to ensure uniqueness---its keys are already considered unique among
 each other.
 
 \begin{table}[H]
-  \centering
   \begin{tabular}{l l l}
     \toprule
     \textbf{id} & \textbf{name} & \textbf{country} \\ \midrule
@@ -853,8 +852,11 @@ Lookup(key):
   values = []
   iterator = Iterator()
   iterator.seek(key)
-  (next_key, next_value) = deserialize(iterator.next())
-  while next_key.starts_with(key):
+  while iterator.valid():
+    (next_key, next_value) = deserialize(iterator.next())
+    if not next_key.starts_with(key):
+      break
+
     values += next_value
 
   values
@@ -867,6 +869,7 @@ Insert(key, value):
 
   \caption{Implementing an indexing scheme using iteration.}\label{lst:iteration-example}
 \end{listing}
+
 
 \subsection{Prefix Iteration}
 
@@ -889,4 +892,126 @@ RocksDB's fundamental LSM-tree structures with data structures optimized for
 prefix iteration, such as hash tables where each prefix is a key.
 
 \subsubsection{Extracting a prefix}
+
+What signifies a prefix varies wildly between different applications. Instead of
+attempting a generalization, RocksDB leaves the extraction up to developers,
+through what is referred to as a \textit{slice transform}: a function on the
+form of $ S \rightarrow S' $, where $ S $ is a slice and $ S' $ is a potentially
+modified version of $ S $. For \code{PersistentState}, $ S' $ corresponds to the
+original key, with any appended suffixes stripped away, as shown in
+table~\ref{table:prefix}.
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{l l l}
+    \toprule
+    \textbf{key} & \textbf{prefix} & \textbf{value} \\ \midrule
+    1 & 1 & (1, ola, norway) \\ \midrule
+    2 & 1 & (2, kari, norway) \\ \midrule
+    norway-1 & norway & (1, ola, norway) \\ \midrule
+    norway-2 & norway & (2, kari, norway) \\ \midrule
+  \end{tabular}
+
+  \caption{\
+    The extracted prefixes strip away the previously appended key suffixes.
+  }\label{table:prefix}
+\end{table}
+
+This gives us the ability to iterate purely within a prefix. Instead of having
+to manually check whether our next iteration step reaches a sibling key, we can
+now seek directly to the prefix and RocksDB will ensure that all given keys
+stays within that prefix. At the same time, we do not have to take care to make
+sure that the first key---\eg \code{norway-1}---is ordered before any other
+keys: RocksDB ensures that our prefix iterator steps through all keys within
+that prefix. To define a correct prefix extractor, RocksDB defines four
+boolean properties that need to hold:
+
+\begin{enumerate}
+  \item $ key.starts\_with(prefix(key)) $
+  \item $ Compare(prefix(key), key) \leq 0 $
+  \item $ Compare(k1, k2) \leq 0 \Longrightarrow Compare(prefix(k1), prefix(k2)) < 0 $
+  \item $ prefix(prefix(key)) \equiv prefix(key) $
+\end{enumerate}
+
+Every key has to go through a defined slice transform at some point, so an
+efficient implementation is crucial. This is not completely trivial though, as
+both the prefix transform's input and output are byte streams. How do we
+separate out the index part of a key from a byte stream? A naive way to do so
+would be to first deserialize the key, extract the index values, before finally
+serializing and returning the prefix in byte form (shown in
+listing~\ref{lst:naive-prefix}).
+
+\begin{listing}[H]
+  \begin{minted}[frame=lines]{python}
+PrefixTransform(raw_key):
+  try:
+    key, suffix = deserialize(raw_key)
+  catch:
+    # raw_key might already have gone through a prefix transform (property 4):
+    return raw_key
+
+  serialize(key)
+  \end{minted}
+
+  \caption{A naive implementation of a prefix transform.}\label{lst:naive-prefix}
+\end{listing}
+
+Deserializing the \textit{entire} key just to strip off the suffix requires an
+unnecessary amount of allocations. In the current example the suffix is an
+integer sequence number, which we always know the byte size off, giving us the
+alternative of slicing away the last $ X $ bytes from the key to build a prefix.
+This would help maintain the three first prefix transformation properties, while
+failing the last: how do we ensure that we only slice away the last bytes once
+when performing $ prefix(prefix(key)) $? Additionally, as we will see in later
+sections, there are cases where we would like the suffix to have a variable byte
+size.
+
+This leaves us with a requirement for a more generic solution, which we will
+solve by slightly worsening the space complexity of our key scheme, through the
+introduction of a \textit{size} segment. Consider a 64-bit integer primary key $
+X $, which bincode (see section~\ref{sec:bincode}) uses 12 bytes to serialize.
+By prefixing the key with the serialized size, 12, the slice transform knows how
+many bytes correspond to the index value of the key, which it can then use to
+remove any suffix values.
+
+\begin{listing}[H]
+  \begin{minted}[frame=lines]{python}
+PrefixTransform(raw_key):
+  # bincode uses 8 bytes to encode
+  # the size value itself, a 64-bit integer:
+  size_offset = 8
+  key_size = deserialize(raw_key[..size_offset])
+  prefix_length = size_offset + key_size
+  # Finally, strip away the suffix:
+  raw_key[..prefix_length]
+  \end{minted}
+
+  \caption{\
+    With the byte size of the relevant portion of the key included,
+    \code{PrefixTransform} only needs to deserialize a single integer to be able
+    to slice away the suffix.
+  }\label{lst:better-prefix}
+\end{listing}
+
+
+\subsection{Separating indices}
+
+Up until now we have not considered the possibility of a collision between
+separate indices. Consider a table with two integer columns and two indices, one
+on each column. How do you separate the different indices? In the example in
+table~\ref{table:colliding}, keys with the value $ 2 $ would cause a collision
+between the two indices.
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{l l}
+    \toprule
+    \textbf{\code{a}} & \textbf{\code{b}} \\ \midrule
+    1 & 2 \\ \midrule
+    2 & 2 \\ \midrule
+  \end{tabular}
+
+  \caption{Two indices with the same number and type of columns would collide
+  under a flat key-value space.}\label{table:colliding}
+\end{table}
 
