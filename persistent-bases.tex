@@ -733,12 +733,16 @@ back to the same key---as shown in listing~\ref{lst:collection-secondary}.
 
 \begin{listing}[H]
   \begin{minted}[frame=lines]{python}
+Lookup(key):
+  raw_values = Get(key)
+  deserialize(raw_values) or []
+
 Insert(key, value):
   # Retrieve and deserialize existing values:
   raw_values = Get(key)
   values = deserialize(raw_values) or []
 
-  # Then, append our new value, serialize the collection and put it back:
+  # Append our new value, serialize the collection and put it back:
   values += value
   Put(key, serialize(values))
   \end{minted}
@@ -767,10 +771,13 @@ section~\ref{sec:compactions}) and read operations.
 
 \begin{listing}[H]
   \begin{minted}[frame=lines]{python}
+Lookup(key):
+  raw_values = Get(key)
+  deserialize(raw_values) or []
+
 MergeOperator(key, existing, operations):
   # Retrieve and deserialize existing values:
-  raw_values = Get(key)
-  values = deserialize(raw_values) or []
+  values = deserialize(existing) or []
 
   # Then, append all Merge(key, value) operations:
   for op in operations
@@ -797,21 +804,89 @@ let us first consider an alternative without the merge operator altogether.
 
 Up until now we have considered options where each index value takes up a single
 key, through various methods of making the value portion of a key-value pair
-plural. Instead, we will now modify the key slightly to achieve uniqueness,
-while still retaining the ability to retrieve its corresponding value from the
-original key. The latter is possible through \textit{iteration}. By making sure
-keys that refer to the same index value are placed next to each other we can
-find the first key, and then iterate forward until we reach a separate index
-value. That way, each key only needs to point to a single value, while
-subsequent insertions can function without needing to retrieve any existing
-values.
+plural. This has shown to be quite sub-par, and it would certainly be an
+improvement if we could avoid storing a collection below each key. This is
+possible through \textit{iteration}. By varying keys slightly to ensure
+uniqueness, while still making sure keys corresponding to the same index value
+are placed next to each other, we can \textit{seek} to the first key for a
+specific index value, and continue to iterate through its subsequent siblings
+until we reach a separate key altogether. Retaining uniqueness among keys is not
+completely straight forward, and while we will consider this in further detail
+in section~\ref{sec:ensuring-uniqueness}, we we will for now make do with a
+monotonically increasing sequence number, where each subsequent insertion
+increments the sequence number and appends it to the original key.
 
-How do we ensure that multiple keys are placed next to each other, while still
-remaining unique? One way of doing so would be with a monotonically increasing
-sequence number appended to the end of each key, incremented on subsequent
-insertions.
+Consider an example table with three columns and two indices: \code{(id, name,
+country)}, with a primary index on \code{id} and a secondary index on
+\code{country}. Table~\ref{table:iteration} shows how the structured schema is
+converted to a flattened key-value space by inserting additional rows for each
+index. Notice that the keys for the primary index do not need any additional
+suffixes to ensure uniqueness---its keys are already considered unique among
+each other.
 
-% TODO:
-% The examples will use the same table, containing three columns and two indices:
-% \code{(id, name, country)}, with a primary index on \code{id} and a secondary
-% index on \code{(country)}.
+\begin{table}[H]
+  \centering
+  \begin{tabular}{l l l}
+    \toprule
+    \textbf{id} & \textbf{name} & \textbf{country} \\ \midrule
+    1 & ola & norway \\ \midrule
+    2 & kari & norway \\ \midrule
+  \end{tabular}
+  \quad
+  \begin{tabular}{l l}
+    \toprule
+    \textbf{key} & \textbf{value} \\ \midrule
+    1 & (1, ola, norway) \\ \midrule
+    2 & (2, kari, norway) \\ \midrule
+    norway-1 & (1, ola, norway) \\ \midrule
+    norway-2 & (2, kari, norway) \\ \midrule
+  \end{tabular}
+
+  \caption{\
+    Flattening a structured table with multiple index into a key-value scheme.
+  }\label{table:iteration}
+\end{table}
+
+\begin{listing}[H]
+  \begin{minted}[frame=lines]{python}
+Lookup(key):
+  values = []
+  iterator = Iterator()
+  iterator.seek(key)
+  (next_key, next_value) = deserialize(iterator.next())
+  while next_key.starts_with(key):
+    values += next_value
+
+  values
+
+Insert(key, value):
+  seq++
+  new_key = serialize(key + seq)
+  Put(new_key, serialize(value))
+  \end{minted}
+
+  \caption{Implementing an indexing scheme using iteration.}\label{lst:iteration-example}
+\end{listing}
+
+\subsection{Prefix Iteration}
+
+While iteration is a promising concept, the performance guarantees it provides
+are potentially sub-par. Consider how an LSM-tree organizes its data: whereas
+each SS-table is sorted, separate files often overlap. This implies that an
+iterator has to consider every available file in its tree while iterating. To
+improve upon this, we can provide RocksDB with a way of partitioning out the
+areas that we want to iterate within, through use of \textit{prefix
+extractors}. In our case, these partitions are separate index keys, such as
+\code{norway} in the example shown in table~\ref{table:iteration}.
+
+After defining a way of extracting these prefixes, RocksDB is free to organize
+its data to optimize for prefix iteration. While previously guaranteeing a total
+order among all keys, RocksDB now only does so within a prefix. Bloom filters
+(see section~\ref{sec:bloom}) can then be defined on prefixes instead of
+individual keys, greatly reducing the amount of SS-tables that have to be
+considered when iterating. Additionally, developers can choose to replace
+RocksDB's fundamental LSM-tree structures with data structures optimized for
+prefix iteration, such as hash tables where each prefix is a key.
+
+\subsubsection{Extracting a prefix}
+

@@ -296,7 +296,7 @@ beyond its size limit, resulting in a compaction to the next level again, and so
 on. Unlike LevelDB, RocksDB also supports doing compactions in parallel, as long
 as there are enough available background threads to do so.
 
-\subsection{Bloom filters}
+\subsection{Bloom filters}\label{sec:bloom}
 Iterating through every SS-table available to find a single key is inefficient.
 Instead, we would like to ask the question ``can this key possibly exist here?''
 for each of the SS-tables we go through, and only operate on the ones where the
