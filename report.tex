@@ -1,6 +1,6 @@
 %% Styling TODOs:
 % -> Try enabling \frenchspacing (don't double space sentences)
-% -> Set a link color: \definecolor{LinkRed}{HTML}{80171F}
+% -> Set a link color: \definecolor{LinkColor}{HTML}{80171F}
 % -> Test drop caps and header from
 %    https://github.com/sarabander/sicp-pdf/blob/master/src/preamble.tex
 
@@ -56,6 +56,17 @@
   maxbibnames=7]{biblatex}
 \setlength\bibitemsep{5pt}
 \addbibresource{sources.bib}
+
+\definecolor{LinkColor}{HTML}{1C4883}
+% Potential colors:
+% SICP red: #80171F
+\hypersetup{
+  pdfauthor={Lars Martin Bævre Ek},
+  pdftitle={Durability in a data-flow based storage system},
+  colorlinks=true,
+  linkcolor=LinkColor,
+  urlcolor=LinkColor,
+}
 
 \begin{document}
 
