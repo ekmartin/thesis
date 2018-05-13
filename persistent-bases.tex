@@ -82,7 +82,10 @@ assert_equal(state.lookup(1), [[A, 1], [B, 1]])
   with existing values.}\label{lst:existing-index}
 \end{listing}
 
-\subsection{Retrieving rows}
+\subsection{Operations}
+
+\subsubsection{Retrieval}
+
 A stateful map would not be useful without a method for retrieving data, which
 \code{State} provides through \code{State::lookup}. This takes a set of columns
 and a key as its arguments, and make use of a \textbf{single} index to retrieve
@@ -94,14 +97,16 @@ distinction from most key-value stores, and is absolutely crucial in
 implementing secondary indices. Without it \code{State} would only be able to
 serve as an index structure for \textit{unique primary keys}.
 
-\subsection{Inserting rows}
+\subsubsection{Insertion}
+
 Naturally, to be able to read anything in the first place, we first need to
 insert data into our stateful data structure. This is done through the
 \code{State::insert} method, which takes a single row as its argument.
 \code{State::insert} is responsible for updating every index in \code{State},
 and has to loop through and insert a pointer for each included index.
 
-\subsection{Removing rows}
+\subsubsection{Removal}
+
 Similar to insertions, removals have to update all indices. Contrary to what one
 might expect, \code{State::remove} takes a single row as argument, and not a
 key. This is due to how \code{State} is used in Soup: as an internal storage
@@ -124,7 +129,7 @@ state.remove(row)
   \caption{Deleting a row from a base node in Soup.}\label{lst:removals}
 \end{listing}
 
-\subsection{Updating rows}
+\subsubsection{Updates}
 Similar to how \code{State} does not have a method for removing by key,
 \code{State} does not include a method for updating a single row. Updates are
 instead handled by the base node's logic, by first emitting a negative
@@ -240,7 +245,7 @@ not the case for writes to potentially slower, durable storage. Here batching is
 key, and an indicator to the underlying methods that they can perform operations
 in one go is crucial.
 
-\subsection{Retrieving rows from \code{State}}
+\subsection{Ownership of data from \code{State}}
 While other languages might implement memory safety through garbage collection
 or manual memory management, Rust does the same through ownership, as described
 in~\ref{sec:rust}. Whenever a value goes out of scope, it is deallocated. How
@@ -430,7 +435,9 @@ After a series of inserts, our SQLite table for the base node's
   }\label{table:sqlite}
 \end{table}
 
-\subsection{Retrieving rows}
+\subsection{Operations}
+
+\subsubsection{Retrieval}
 
 After the hard work of building the indices has completed, a myriad of rows is
 only a \code{SELECT}-statement away. \code{PersistentState::lookup} takes a set
@@ -441,7 +448,7 @@ form of \code{SELECT row FROM store WHERE index\_0 = 1 AND index\_1 = "cat"},
 which SQLite can then complete in a timely manner due to the index on \code{(a,
 b)}.
 
-\subsection{Inserting rows}
+\subsubsection{Insertion}
 
 Given a vector of values, \code{PersistentState} has to first extract the
 columns necessary for its current set of indices and so that their values can be
@@ -450,14 +457,14 @@ translated to SQLite friendly types. These can then be used to build an
 row) VALUES (\ldots)}, where \code{row} is a binary representation of the entire
 vector, serialized using \code{bincode}.
 
-\subsection{Removing rows}
+\subsubsection{Removal}
 
 Similar to lookups, removals need to first build a \code{WHERE}-clause by
 extracting the index column values from the target row, which can then be used
 to perform a \code{DELETE}-statement on the form of \code{DELETE FROM store
 WHERE index\_0 = 1 AND index\_1 = "cat"}.
 
-\subsection{Processing insertions and removals}
+\subsubsection{Processing insertions and removals}
 
 All mutations need to be done within a transaction in SQLite, and operations
 performed without an explicit transactions are implicitly given one. Performing
@@ -493,7 +500,7 @@ fn process_records(&mut self, records: &Records) {
 \end{listing}
 
 
-\subsection{Counting rows}
+\subsubsection{Counting rows}
 
 An accurate count of the total rows in the database can be retrieved using an
 SQL \code{COUNT}-query: \code{SELECT COUNT(row) FROM store}.
@@ -1045,3 +1052,9 @@ values can be retrieved from the first index.
     prevent collisions.
   }\label{table:index-id}
 \end{table}
+
+\subsection{Durability}
+
+RocksDB ensures durability through the use of a write-ahead log.
+\todo{write batch, separate wal}
+
