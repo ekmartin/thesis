@@ -62,7 +62,7 @@ New indices have to be \textbf{built}, as they are expected to answer queries
 for data that has already been inserted, right away.
 
 \begin{listing}[H]
-  \begin{minted}[frame=lines]{rust}
+  \begin{minted}[frame=lines]{python}
 state = State()
 // Initialize `state` with an index on the first column:
 state.add_key([0])
@@ -117,7 +117,7 @@ translating \code{remove(row)} to \code{remove(key)} is trivial, as shown in
 listing~\ref{lst:removals}.
 
 \begin{listing}[H]
-  \begin{minted}[frame=lines]{rust}
+  \begin{minted}[frame=lines]{python}
 state = State()
 state.add_key([0])
 state.insert([A, 1])
@@ -879,7 +879,7 @@ Insert(key, value):
 \end{listing}
 
 
-\subsection{Prefix Iteration}
+\subsection{Prefix Iteration}\label{sec:prefix-iteration}
 
 While iteration is a promising concept, the performance guarantees it provides
 are potentially sub-par. Consider how an LSM-tree organizes its data: whereas
@@ -1129,7 +1129,7 @@ number, as it is reset when recovering.
 \end{table}
 
 \begin{listing}[H]
-  \begin{minted}[frame=lines]{rust}
+  \begin{minted}[frame=lines]{python}
 Recover:
   epoch = ReadEpoch()
   epoch++
@@ -1192,6 +1192,116 @@ read performance, by storing the whole row for each index. Insertions now have
 to write the whole row for every index, increasing the total storage size, but
 with the great advantage of never having to read more than once to read from a
 secondary index.
+
+\subsection{Operations}
+
+\subsubsection{Retrieval}
+
+The action needed to retrieve rows for a key depends on what kind of index the
+key represents. For unique primary key indices each key maps to a single row,
+where the row can be retrieved using a RocksDB \code{Get} operation. Other
+indices need to use a prefix iterator, as described in
+section~\ref{sec:prefix-iteration}, to ensure that all of the corresponding
+values are retrieved.
+
+\begin{listing}[H]
+  \begin{minted}[frame=lines]{python}
+Lookup(columns, key):
+  index = index_for(columns)
+  prefix = serialize_prefix(key)
+  if index.is_unique:
+    raw_row = Get(prefix)
+    deserialize(raw_row) or []
+  else:
+    prefix_iterator(prefix).map(value -> deserialize(value))
+  \end{minted}
+
+  \caption{Retrieving one or more rows from \code{PersistentState} backed by
+  RocksDB.}\label{lst:rocksdb-lookup}
+\end{listing}
+
+\subsubsection{Insertion}
+
+The different parts of our key-value scheme comes together when inserting rows.
+A unique primary key is built up, with an incremented sequence number suffix
+included if its values are not unique by themselves. Then, a RocksDB \code{Put}
+operation is performed once for each index, with the same value: the serialized
+representation of the row.
+
+\begin{listing}[H]
+  \begin{minted}[frame=lines]{python}
+Insert(row):
+  # Extract the key portion of the row:
+  primary_key = build_primary_key(row)
+  if has_unique_index:
+    # The first index is unique, so no sequence number or epoch needed:
+    serialized_key = serialize_prefix(primary_key)
+  else:
+    # Otherwise, increment the sequence number and use that in the key:
+    sequence++
+    serialized_key = serialize_key(primary_key, epoch, sequence)
+
+  serialized_row = serialize(row)
+  # First write the primary key row:
+  Put(serialized_key, serialized_row)
+
+  # Then insert a row for each secondary index:
+  for index in secondary_indices:
+    key = build_key(row, index)
+    serialized_key = serialize_key(key, serialized_key)
+    Put(serialized_key, serialized_row)
+  \end{minted}
+
+  \caption{Insertions write one row per index.}\label{lst:rocksdb-insert}
+\end{listing}
+
+\subsubsection{Removal}
+
+Removals undo the work done by an insertion operation, through cleaning up rows
+for each index maintained by a \code{PersistentState} instance. Note that a
+removal in Soup is given the entire row, and not a key, with the expected out
+come that it will delete a \textit{single} value. This means that we need to
+take care to only remove that exact value---and any references to it---for
+non-unique indices.
+
+\begin{listing}[H]
+  \begin{minted}[frame=lines]{python}
+PerformRemove(row, primary_key):
+  # Delete the primary index row first:
+  Delete(primary_key)
+
+  # Then delete any secondary index references:
+  for index in secondary_indices:
+    key = build_key(row, index)
+    serialized_key = serialize_key(key, primary_key)
+    Delete(serialized_key)
+
+Remove(row):
+  primary_key = build_primary_key(row)
+  prefix = serialize_prefix(primary_key)
+  if has_unique_index:
+    PerformRemove(row, prefix)
+  else:
+    for (key, value) in prefix_iterator(prefix):
+      if deserialize(value) == row:
+        PerformRemove(row, key)
+  \end{minted}
+
+  \caption{Removals clean up all the index references pointing to the given row,
+  after removing the row itself.}\label{lst:rocksdb-remove}
+\end{listing}
+
+\subsubsection{Counting rows}
+
+RocksDB, being a key-value store, does not have an equivalent of the
+\textit{COUNT} operator in SQLite. To retrieve an exact count of all rows, one
+would need to either maintain a separate variable (which would then need to be
+persisted potentially on every write), or iterate through the entire collection
+of rows---a potentially costly operation. RocksDB does on the other hand have an
+estimated internal property, \code{rocksdb.etimate-num-keys} which can be
+retrieved trivially. At the moment, a total row count is only needed for
+debugging and statistical purposes in Soup, making an estimated count
+sufficient.
 
 \subsection{Replacing the Soup write-ahead log}
 
