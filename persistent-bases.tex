@@ -832,6 +832,7 @@ suffixes to ensure uniqueness---its keys are already considered unique among
 each other.
 
 \begin{table}[H]
+  \centering
   \begin{tabular}{l l l}
     \toprule
     \textbf{id} & \textbf{name} & \textbf{country} \\ \midrule
@@ -1074,7 +1075,9 @@ is also unnecessary. As long as keys are unique for the initial index---the
 primary index---the secondary indices can make use of the primary key as a
 suffix to ensure uniqueness. This is shown in table~\ref{table:unique-suffix},
 where the secondary index on country includes the primary key as a suffix, to
-avoid collision.
+avoid collision. This also greatly speeds up the speed of removals: since
+secondary index keys can now be derived using the row and the primary key value,
+no retrievals are needed to remove rows.
 
 \begin{table}[H]
   \centering
@@ -1136,6 +1139,59 @@ Recover:
   \caption{The epoch is retrieved, incremented, and persisted again when
   \code{PersistentState} recovers.}\label{lst:epoch}
 \end{listing}
+
+\subsection{Following index pointers: space versus performance}
+
+Having covered the contents of the key portion of secondary index rows, let us
+now consider the value. In MyRocks, retrieval of secondary index values require
+a subsequent lookup of the primary key row, to avoid having to store the value
+multiple times. This opens for a completely empty value portion: the key
+already includes everything needed to retrieve the full row.
+
+A subsequent read for every secondary index lookup has the potential to be quite
+costly for large indices. With \code{PersistentState}'s iteration scheme, rows
+covered by the same index are co-located, opening for efficient caching behavior
+when a single secondary index key points to a large amount of rows. This is less
+of an improvement if each of the retrievals result in a second, and completely
+random, read. The second lookup has no such property and the values might be
+located anywhere. Other database systems often utilize a covering index: when
+all the columns needed exist in either the key portion of the primary or
+secondary index, no further reads are required. This is not possible for Soup,
+where nodes further down the query graph always require the full row
+representation.
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{l l l}
+    \toprule
+    \textbf{key} & \textbf{value} \\ \midrule
+    1 & (1, ola, norway) \\ \midrule
+    2 & (2, kari, norway) \\ \midrule
+    norway-1 & \code{NULL} \\ \midrule
+    norway-2 & \code{NULL} \\ \midrule
+  \end{tabular}
+  \quad
+  \begin{tabular}{l l}
+    \toprule
+    \textbf{key} & \textbf{value} \\ \midrule
+    1 & (1, ola, norway) \\ \midrule
+    2 & (2, kari, norway) \\ \midrule
+    norway-1 & (1, ola, norway) \\ \midrule
+    norway-2 & (2, kari, norway) \\ \midrule
+  \end{tabular}
+
+  \caption{\
+    The leftmost table stores nothing for secondary indices and require an
+    additional lookup for each row. The rightmost includes the entire row for
+    each index and does not.
+  }\label{table:follow-pointers}
+\end{table}
+
+Instead \code{PersistentState} trades write amplification and space usage for
+read performance, by storing the whole row for each index. Insertions now have
+to write the whole row for every index, increasing the total storage size, but
+with the great advantage of never having to read more than once to read from a
+secondary index.
 
 \subsection{Replacing the Soup write-ahead log}
 
