@@ -207,7 +207,7 @@ on disk, where each file is sorted. SS-tables are immutable: a new SS-table is
 always created, and existing ones are never updated. This ensures that writes
 remain sequential.
 
-\subsection{Write-ahead Log}
+\subsection{Write-ahead Log}\label{sec:rocksdb-wal}
 RocksDB achieves durability through the use of a write-ahead log (WAL). Without
 it, data in memtables would be lost at the event of a crash. By default, every
 \code{Put} operation results in a write to the RocksDB WAL, with the optional

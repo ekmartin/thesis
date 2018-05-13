@@ -505,7 +505,7 @@ fn process_records(&mut self, records: &Records) {
 An accurate count of the total rows in the database can be retrieved using an
 SQL \code{COUNT}-query: \code{SELECT COUNT(row) FROM store}.
 
-\subsection{Replacing the Soup write-ahead log}
+\subsection{Replacing the Soup write-ahead log}\label{sec:sqlite-vs-soup}
 
 Soup already writes all updates to durable storage in the form of a write-ahead
 log. After an unexpected failure, Soup replays entries in the log to recover its
@@ -1053,8 +1053,99 @@ values can be retrieved from the first index.
   }\label{table:index-id}
 \end{table}
 
-\subsection{Durability}
+\subsection{Ensuring unique keys for secondary indices}
 
-RocksDB ensures durability through the use of a write-ahead log.
-\todo{write batch, separate wal}
+Up until now the secondary index keys have been suffixed with a monotonically
+increasing sequence number. While this works well as an example, it has a few
+issues. For one, how does \code{PersistentState} know what sequence number to
+start at after recovering? Recording the latest sequence number after each write
+would significantly degrade write throughput, while figuring out the last
+sequence number used upon recovering would increase the time it takes to
+recover.
 
+Instead, \code{PersistentState} includes an \textit{epoch} with the sequence
+number, which it increments and persists upon recovering. This ensures that the
+sequence number can start counting from zero after recovery, without any chance
+of collision. In short, the pair \code{(epoch, sequence number)} is always
+unique for a single index.
+
+Maintaining a \code{(epoch, sequence number)} pair for each index in every case
+is also unnecessary. As long as keys are unique for the initial index---the
+primary index---the secondary indices can make use of the primary key as a
+suffix to ensure uniqueness. This is shown in table~\ref{table:unique-suffix},
+where the secondary index on country includes the primary key as a suffix, to
+avoid collision.
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{l l}
+    \toprule
+    \textbf{key} & \textbf{value} \\ \midrule
+    10 & (10, bob, norway) \\ \midrule
+    20 & (20, anne, norway) \\ \midrule
+    norway-10 & (10, bob, norway) \\ \midrule
+    norway-20 & (20, anne, norway) \\ \midrule
+  \end{tabular}
+
+  \caption{\
+    The primary key---ID---is used as a suffix for the secondary index on
+    country to ensure that separate keys are unique.
+  }\label{table:unique-suffix}
+\end{table}
+
+This is also how CockroachDB~\cite{cockroach-encoding} and
+MyRocks~\cite{myrocks-encoding} handle secondary index keys. What happens when
+the primary index does not have unique keys? While CockroachDB and MyRocks
+recommend against it, it is supported by using an automatically generated ID.
+This is where our previously mentioned \code{(epoch, sequence number)} pair
+comes in, by functioning as an automatically generated suffix to ensure
+uniqueness among keys in the initial index. With the exception of the extra
+storage required for the keys, this is completely free: unlike an incremented
+identification number, no extra writes or reads are incurred for our sequence
+number, as it is reset when recovering.
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{l l}
+    \toprule
+    \textbf{key} & \textbf{value} \\ \midrule
+    bob-0-0 & (bob, norway) \\ \midrule
+    anne-0-1 & (anne, norway) \\ \midrule
+    norway-bob-0-0 & (bob, norway) \\ \midrule
+    norway-anne-0-1 & (anne, norway) \\ \midrule
+  \end{tabular}
+
+  \caption{\
+    In this example the table has no unique primary key, and instead uses the
+    potentially duplicate \code{name} column for an initial index. Since
+    \code{name} is not guaranteed to be unique, it is suffixed by a
+    \code{(epoch, sequence number)} suffix.
+    Secondary index keys are still suffixed with the entire key from the initial
+    index to ensure uniqueness.
+  }\label{table:duplicate-suffix}
+\end{table}
+
+\begin{listing}[H]
+  \begin{minted}[frame=lines]{rust}
+Recover:
+  epoch = ReadEpoch()
+  epoch++
+  PersistEpoch(epoch)
+  \end{minted}
+
+  \caption{The epoch is retrieved, incremented, and persisted again when
+  \code{PersistentState} recovers.}\label{lst:epoch}
+\end{listing}
+
+\subsection{Replacing the Soup write-ahead log}
+
+Section~\ref{sec:sqlite-vs-soup} attempted to replace Soup's write-ahead log
+with SQLite's, ensuring insertions and removals were safely persisted to SQLite
+prior to sending out any write acknowledgments. This turned out to be too slow:
+in addition to writing records to the WAL, SQLite also had to update its B-tree
+indices before returning. This is not the case with RocksDB, where data is first
+written to an in-memory buffer and only later flushed to disk by background
+threads. This greatly reduces the gap between the RocksDB and the Soup
+write-ahead logs. Not to say it completely diminishes it---RocksDB still has to
+potentially write more data than Soup, as it has to persist information about
+each of the separate indices it maintains.
