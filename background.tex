@@ -336,16 +336,31 @@ structure based on the prefix.
 % TODO: might show an example to better explain prefix stuff here, or save it
 % for implementation.
 
+\subsection{Column Families}
+
+RocksDB supports the equivalent of tables from a traditional database through
+\textit{column
+families}\furl{https://github.com/facebook/rocksdb/wiki/Column-Families}.
+Separate column families share the same write-ahead log but have their own
+MemTables and SS-tables. Maintaining the same WAL makes it possible to
+atomically write across multiple column families, while keeping independent
+LSM-tree components open for the possibility of configuring different column
+families separately---an important difference from tables in SQL databases.
+
+Column family support was not added until version 3.0 of RocksDB.\@ To maintain
+backwards compatibility, the default API methods operate on the same column
+family, ``default'', with separate methods taking in an additional column family
+argument.
+
 \subsection{RocksDB from Rust}
 While RocksDB is written in C++ it provides a separate API through its
 C-bindings, which are used to call into it from a variety of different
-languages\footnote{RocksDB Language Bindings:
-\url{https://github.com/facebook/rocksdb/blob/master/LANGUAGE-BINDINGS.md}}.
+languages\furl{https://github.com/facebook/rocksdb/blob/master/LANGUAGE-BINDINGS.md}.
 
 % TODO: ref to appendix?
 % TODO: ref to ffi section
 This thesis makes use of a modified version of
-\textbf{rust-rocksdb}\footnote{rust-rocksdb: \url{https://github.com/spacejam/rust-rocksdb}}, which exposes a Rust-friendly
+\textbf{rust-rocksdb}\furl{https://github.com/spacejam/rust-rocksdb}, which exposes a Rust-friendly
 API that eventually calls into the C-bindings.
 
 \begin{listing}[H]\label{lst:rocksdb-rust}

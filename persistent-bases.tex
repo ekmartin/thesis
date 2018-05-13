@@ -165,9 +165,9 @@ out-performed by an LSM-tree (see~\ref{sec:rocksdb}) on sequential writes. At
 the same time, decades of changes in hardware research have broadened the field
 even further. A new NVMe SSD is able to reach almost half a million random reads
 per
-second\footnote{\url{http://www.samsung.com/semiconductor/minisite/ssd/product/consumer/ssd960/}},
+second\furl{http://www.samsung.com/semiconductor/minisite/ssd/product/consumer/ssd960/},
 whereas a traditional spinning disk barely scratches the surface of a
-hundred\footnote{\url{https://www.symantec.com/connect/articles/getting-hang-iops-v13}}.
+hundred\furl{https://www.symantec.com/connect/articles/getting-hang-iops-v13}.
 This makes building data structures for durable storage non-trivial and time
 consuming.
 
@@ -254,7 +254,7 @@ often the case for data structures, and \code{State} is no exception here.
 Values stored in \code{MemoryState} should not have to be cloned during
 retrieval, which would incur a heavy performance penalty. Instead, retrieving
 values from \code{State} return dynamically reference
-counted\footnote{\url{https://doc.rust-lang.org/std/rc/index.html}} values,
+counted\furl{https://doc.rust-lang.org/std/rc/index.html} values,
 allowing shared ownership of a single value by counting owners at runtime.
 Subsequent retrievals of the same value always point to the same memory
 location, with the source of truth being stored in \code{State}.
@@ -270,7 +270,7 @@ the value exists on disk, but the actual memory representation of the value was
 just created. While \code{MemoryState::lookup} would want to return a reference
 to an internally stored value, \code{PersistentState::lookup} would rather want
 to hand over ownership of the value to the caller. Enter the
-\code{Cow}\footnote{\url{https://doc.rust-lang.org/std/borrow/enum.Cow.html}}
+\code{Cow}\furl{https://doc.rust-lang.org/std/borrow/enum.Cow.html}
 ---a \textbf{clone-on-write} pointer from Rust's standard library that helps
 with this exact purpose, by allowing data to be represented either as
 \code{Borrowed} in the case of \code{MemoryState} or \code{Owned} for
@@ -578,7 +578,7 @@ possibility of taking checkpoints in a separate thread, by incurring manual
 checkpoints using the \\ \code{sqlite3\_wal\_checkpoint\_v2} API.\@ While this
 sounds promising, it only helps if regular processing can continue while the
 checkpoint is being taken. SQLite describes four different checkpoint
-modes\footnote{\url{https://www.sqlite.org/c3ref/wal_checkpoint_v2.html}}:
+modes\furl{https://www.sqlite.org/c3ref/wal_checkpoint_v2.html}:
 
 \begin{itemize}
   \item \code{SQLITE\_CHECKPOINT\_PASSIVE}: Checkpoints as many frames as
@@ -761,7 +761,7 @@ structure.
 
 In addition to the more common \code{Get} and \code{Put} operations, RocksDB
 supports an atomic read-modify-write operation through the \code{Merge}
-method\footnote{\url{https://github.com/facebook/rocksdb/wiki/Merge-Operator}}.
+method\furl{https://github.com/facebook/rocksdb/wiki/Merge-Operator}.
 This leads to the same result as in our previous implementation---with each key
 mapping to a collection of values---without any random reads while writing.
 Instead, RocksDB considers calls on the form \code{Merge(key, value)} as an
@@ -1028,8 +1028,6 @@ column family with different options, indices can be tuned differently based on
 similar patterns. Keeping a separate column family per index also simplifies the
 rare case where all rows in the system have to be iterated through---all the
 values can be retrieved from the first index.
-
-\todo{write about column families in rocksdb background}
 
 \begin{table}[H]
   \centering
