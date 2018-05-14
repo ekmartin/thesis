@@ -1,7 +1,26 @@
 \chapter{Benchmarks}\label{chap:benchmarks}
 
+Soup includes a series of benchmarks designed to reproduce different real world
+workloads where usage of Soup might be appropriate. Additionally, this thesis
+introduces a couple of benchmarks that make it easier to see the positive and
+negative effects of the specific changes introduced.
+
 \section{Hardware}
-\section{Vote}
+
+\todo{move this to the evaluation section}
+Unless otherwise specified, benchmarks are run on Dell PowerEdge R430 server
+with two Intel Xeon E5-2660 v3 CPUs and a total of 20 physical and 40 logical
+cores. The server has 64GB of DDR4 RAM running at a speed of 2200MHz, and two
+solid-state drives: a Samsung SSD 850 PRO and an Intel SSD S3710. The server
+runs Arch Linux.
+
 \section{Lobsters}
+
+Lobsters\furl{http://lobste.rs/} is a news aggregation website built using Ruby
+on Rails, backed by MySQL.\@ Soup's Lobsters benchmark re-uses the queries run
+by the real Lobsters application, modeled after Lobsters production traffic to
+best resemble the actual workload the Lobsters servers face.
+
+\section{Vote}
 \section{Replay}
 \section{Recovery}

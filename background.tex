@@ -4,6 +4,16 @@
 
 \subsection{MySQL Shim}
 
+Soup supports a decent subset of SQL in its query definitions. Regardless, using
+Soup in an application requires significant changes: all queries have to be
+defined ahead of time, and interactions with Soup have to go through Soup's
+external API.\@ Soup's MySQL shim~\cite{soup-mysql} makes this easier by letting
+applications communicate with Soup using the MySQL binary protocol.
+
+The MySQL shim acts as a separate service, which clients interact with over
+TCP/IP.\@ Received queries extend the Soup data-flow graph if needed, before
+executing the query by forwarding it to an appropriate Soup worker.
+
 \section{Rust}
 \subsection{Foreign Function Interface}
 
