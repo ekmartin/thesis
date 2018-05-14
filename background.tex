@@ -2,6 +2,8 @@
 
 \section{Soup}
 
+\subsection{MySQL Shim}
+
 \section{Rust}
 \subsection{Foreign Function Interface}
 
@@ -9,7 +11,127 @@
 
 \section{bincode}
 
+bincode~\cite{bincode} is a Rust binary serialization library, used heavily
+throughout both this thesis and in Soup, for everything from RPC
+communication to persisting data to durable storage. In short, bincode takes an
+arbitrary Rust object and turns it into a series of bytes---an encoded object.
+The size of the resulting byte stream is usually either less than, or the same
+as, the size of the source object. bincode builds on top of the
+Serde\furl{https://serde.rs/} serialization framework.
+
+As the encoded format is of relevance to later sections, we will briefly go
+through it here. Primitive values, such as numbers, are encoded directly using
+Rust's \code{Writer} trait, with a few exceptions:
+
+\begin{itemize}
+  \item \code{isize} and \code{usize} types, which have varying sizes depending
+    on the OS, are encoded as \code{i32} and \code{u64} correspondingly.
+  \item Strings are encoded as the tuple \code{(number of bytes, bytes)}, where
+    the former is a \code{u64} and the latter is a byte slice.
+\end{itemize}
+
+Compound types---enums, structs, vectors, and tuples---are encoded recursively,
+with each of their fields placed out in succession. With vector lengths not
+being determined at compile time, vectors are prefixed with a length field on
+the form of a \code{u64}. This is not necessary for the other compound types, as
+their sizes do not vary at runtime. An enum instance can represent multiple
+types, and is prefixed with a \code{u32} tag used to determine which
+enum variant it represents.
+
+\begin{listing}[H]
+  \begin{minted}[frame=lines]{rust}
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+enum Number {
+    Positive(u64),
+    Negative(u64)
+}
+
+fn main() {
+    let values = vec![Number::Positive(3), Number::Negative(4)];
+    // This serializes as:
+    // vector length u64,
+    // + enum variant u32 + u64,
+    // + enum variant u32 + u64
+    // = u64, u32, u64, u32, u64
+    // = 32 bytes
+    let raw = bincode::serialize(&values).unwrap();
+    let deserialized: Vec<_> = bincode::deserialize(&raw).unwrap();
+
+    for (i, element) in values.into_iter().enumerate() {
+        assert_eq!(element, deserialized[i]);
+    }
+}
+  \end{minted}
+
+  \caption{}\label{lst:bincode}
+\end{listing}
+
+\section{Rust}
+
+\subsection{Foreign Function Interface}
+
+Rust has excellent support for calling into external C programs.
+
 \section{Profiling}
+
+\subsection{CPU}
+
+A large part of application performance tuning comes down to figuring out which
+portion of a program is running slowly and why that is the case. Throughout
+this thesis that is accomplished using
+\code{perf}\furl{https://perf.wiki.kernel.org}---a profiling tool that helps us
+answer the question ``What is the CPU spending time on?''.
+
+\code{perf} collects information from both hardware counters and logical
+tracepoints. The latter is especially useful for recording call graphs of a
+program, which in turn lets us produce flame graphs like the one in
+figure~\ref{fig:flame-example} using tools such as
+\code{FlameGraph}\furl{https://github.com/brendangregg/FlameGraph} and
+\code{FlameScope}\furl{https://github.com/Netflix/flamescope}. Flame graphs show
+time spent on the horizontal axis, while showing the call graph vertically.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{flame-example}
+  \caption{\
+    An example flame graph from events recorded using \code{perf}.
+  }\label{fig:flame-example}
+\end{figure}
+
+\subsection{Memory}
+
+Memory leaks happen when we continually allocate memory without freeing it. This
+can easily happen in languages without dynamic memory allocation, when a
+programmer forgets to deallocate some portion of memory after using it. At the
+same time it can also happen in garbage collected languages, \eg when
+continuously attaching listener functions to an event system without regard for
+previous subscriptions. Rust's ownership system largely prevents issues of the
+first kind from happening---variables that go out of scope are deallocated
+automatically. Regardless, Rust supports calling into arbitrary C-programs (see
+section~\ref{sec:ffi}), where anything could happen.
+
+To profile memory leaks, the Valgrind
+Massif\furl{http://valgrind.org/docs/manual/ms-manual.html} heap profiler is
+used. Massif continuously takes snapshots of the heap, recording what memory is
+used for, and where that memory was allocated from. While this is subject to
+change in the future, current versions of Rust use the
+\code{jemalloc}\furl{http://jemalloc.net/} memory allocator instead of the
+system's default allocator. Unfortunately, memory profiling using Valgrind does
+not work well with \code{jemalloc}. To resolve this we can instead force Rust to
+use the system allocator, at least while profiling.
+
+\begin{listing}[H]
+  \begin{minted}[frame=lines]{rust}
+#![feature(alloc_system)]
+#![feature(global_allocator, allocator_api)]
+
+#[global_allocator]
+static ALLOC: std::alloc::System = std::alloc::System;
+  \end{minted}
+
+  \caption{Forcing Rust to use the system memory allocator makes it possible to
+  profile it using tools such as Valgrind Massif.}\label{lst:system-alloc}
+\end{listing}
 
 \section{SQLite}\label{sec:sqlite}
 SQLite~\cite{sqlite} is by far the most widely deployed database ever written.
@@ -97,7 +219,7 @@ Most applications interact with SQLite through its C-API, compiling SQL
 queries into prepared binary statements, which can then be executed efficiently
 with different arguments, as shown in listing \ref{lst:sqlite}.
 
-\begin{listing}[H]\label{lst:sqlite}
+\begin{listing}[H]
   \begin{minted}[frame=lines]{c}
 sqlite3 *db;
 sqlite3_stmt *statement;
@@ -126,7 +248,7 @@ sqlite3_bind_int(statement, 1, id);
   \end{minted}
 
   \caption{Simple SQLite C-example showing how to write a single row (error
-  handling ignored for brevity)}
+  handling ignored for brevity)}\label{lst:sqlite}
 \end{listing}
 
 In addition, most programming languages have at least one popular library for
@@ -141,7 +263,7 @@ Accessing SQLite from Rust can be done through the excellent \code{Rusqlite}
 library~\cite{rusqlite}, which
 provides a Rust API on top of SQLite's C-bindings.
 
-\begin{listing}[H]\label{lst:sqlite}
+\begin{listing}[H]
   \begin{minted}[frame=lines]{rust}
 let conn = Connection::open("test.db").unwrap();
 conn.execute(
@@ -159,7 +281,7 @@ statement.execute(&[&id]).unwrap();
   \end{minted}
 
   \caption{SQLite example using \code{rusqlite} showing how to write a single
-  row.}
+  row.}\label{lst:sqlite-rust}
 \end{listing}
 
 \section{RocksDB}\label{sec:rocksdb}
@@ -228,7 +350,7 @@ full disk capacity without slowing down the throughput of WAL writes. Even more
 drastically, the database files could be written to faster, volatile storage,
 relying solely on never-archived WAL-files for (albeit much slower) recovery.
 
-\begin{listing}[H]\label{lst:write-batch}
+\begin{listing}[H]
   \begin{minted}[frame=lines]{rust}
 let batch = WriteBatch::default()
 batch.put("a", "1");
@@ -240,7 +362,7 @@ db.write(batch, &opts);
   \end{minted}
 
   \caption{Rust code for safely persisting a batch of writes to RocksDB and its
-  write-ahead log.}
+  write-ahead log.}\label{lst:write-batch}
 \end{listing}
 
 \code{Put} operations can also be batched into a \code{WriteBatch} (as shown in
@@ -410,7 +532,7 @@ This thesis makes use of a modified version of
 \textbf{rust-rocksdb}\furl{https://github.com/spacejam/rust-rocksdb}, which exposes a Rust-friendly
 API that eventually calls into the C-bindings.
 
-\begin{listing}[H]\label{lst:rocksdb-rust}
+\begin{listing}[H]
   \begin{minted}[frame=lines]{rust}
 let db = DB::open_default("db_path").unwrap();
 
@@ -424,5 +546,5 @@ match db.get(key) {
 }
   \end{minted}
 
-  \caption{Simple example usage of rust-rocksdb}
+  \caption{Simple example usage of rust-rocksdb}\label{lst:rocksdb-rust}
 \end{listing}
