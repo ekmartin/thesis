@@ -352,6 +352,53 @@ backwards compatibility, the default API methods operate on the same column
 family, ``default'', with separate methods taking in an additional column family
 argument.
 
+\subsection{Different MemTable implementations}
+
+RocksDB provides multiple implementations of its in-memory
+MemTables\furl{https://github.com/facebook/rocksdb/wiki/MemTable}, which can be
+changed between through \textit{factories}. Different implementations have
+different advantages and disadvantages, with the default being the all around
+safest choice.
+
+\subsubsection{Skip List}
+
+The default implementation uses a \textit{skip list}, a data structure with
+comparable performance guarantees to a binary search tree---$ O(\log n) $ for
+searches, insertions and deletions---but with far better support for concurrent
+operations. This makes the default skip list implementation the only MemTable
+factory capable of concurrent insertions. Flushing a skip list MemTable to disk
+is also considerably faster compared to the other factories, with a much lower
+memory overhead.
+
+\subsubsection{Hash Skip List}
+
+RocksDB provides two hash based MemTable factories, where keys are organized in
+buckets based on their extracted \textit{prefix}. This implies that the hash
+based implementations are only usable when a prefix extractor is defined, and
+that they only support efficient iterations within a specific prefix. At the
+same time the hash based implementations are also considerably more efficient
+when that is the case, providing $ O(\log k) $ performance, where $ k $ is the
+number of keys within a specific prefix (which is often quite low).
+
+\subsubsection{Hash Linked List}
+
+Similar to the skip list based hash table, RocksDB also provides a hash based
+implementation where each bucket is maintained as a linked list instead of a
+skip list. This is similar to a traditional hash table with chaining as its
+collision resolution, and maintains close to constant time performance
+guarantees as long as the elements in each bucket is kept low. This comes with
+significantly lower memory overhead compared to the skip list based hash table,
+but with naturally lower performance when the amount of keys per prefix starts
+to grow. Because of this the buckets in a \code{HashLinkList} are implicitly converted
+to a skip list when its element count exceeds a certain threshold (256 by
+default).
+
+\subsubsection{Vector}
+
+Finally, RocksDB also provides a MemTable factory heavily tuned for random
+insertions, with abysmal performance for everything else. This makes it only
+useful for bulk loading data as fast as possible.
+
 \subsection{RocksDB from Rust}
 While RocksDB is written in C++ it provides a separate API through its
 C-bindings, which are used to call into it from a variety of different

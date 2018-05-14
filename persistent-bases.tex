@@ -1308,10 +1308,82 @@ sufficient.
 Section~\ref{sec:sqlite-vs-soup} attempted to replace Soup's write-ahead log
 with SQLite's, ensuring insertions and removals were safely persisted to SQLite
 prior to sending out any write acknowledgments. This turned out to be too slow:
-in addition to writing records to the WAL, SQLite also had to update its B-tree
+in addition to writing records to the WAL,\@ SQLite also had to update its B-tree
 indices before returning. This is not the case with RocksDB, where data is first
 written to an in-memory buffer and only later flushed to disk by background
-threads. This greatly reduces the gap between the RocksDB and the Soup
-write-ahead logs. Not to say it completely diminishes it---RocksDB still has to
-potentially write more data than Soup, as it has to persist information about
-each of the separate indices it maintains.
+threads. While this greatly reduces the gap between \code{PersistentState} and
+regular Soup, RocksDB still has to potentially write $ N  $ times more data to
+disk than Soup's regular WAL, where $ N $ is the amount of indices
+\code{PersistentState} maintains.
+
+To prevent synchronizing to durable storage more than what is necessary to
+retain Soup's durability guarantees, the records from a single packet result in
+a single \code{WriteBatch} (see section~\ref{sec:rocksdb-wal})---persisted once
+towards the end of \code{PersistentState::process\_records}.
+
+\todo{the wal can reside on a separate disk}
+
+\subsection{Building new indices}
+
+Indices added after rows have already been inserted into \code{PersistentState}
+need to be \textit{built}, to ensure that they start serving reads for
+existing rows right away. This is done by iterating through all of the existing
+rows and inserting index pointers for each of them into the newly created column
+family. Finally, meta information about the index itself is persisted to RocksDB
+\textit{after} building the index, preventing recovery from trying to rebuild
+the index in the future.
+
+\begin{listing}[H]
+  \begin{minted}[frame=lines]{python}
+AddKey(columns):
+  if columns in existing_indices:
+    return
+
+  index_id = length(existing_indices)
+  column_family = create_column_family(index_id)
+
+  if index_id > 0:
+    for (primary_key, value) in all_rows():
+      row = deserialize(value)
+      key = build_key(row, columns)
+      serialized_key = serialize_key(key, primary_key)
+      Put(column_family, serialized_key, value)
+
+  existing_indices += columns
+  PersistMeta()
+  \end{minted}
+
+  \caption{\
+    Adding a new index to \code{PersistentState} builds the index using any
+    existing rows, before finally persisting the index to RocksDB.
+  }\label{lst:add-key}
+\end{listing}
+
+It might be tempting to wrap the entire index construction in an atomic
+\code{WriteBatch} for multiple reasons:
+
+\begin{itemize}
+  \item The index would either be completely built or not built at all.
+  \item The WAL would only have to be synchronized once---when committing the
+    \code{WriteBatch}.
+\end{itemize}
+
+Unfortunately---at least for this particular case---a \code{WriteBatch} keeps
+all updates in memory until it is committed. This raises a potential issue: an
+index could only be built if all existing rows fit in memory. On the other end
+of the spectrum, committing every row to disk incrementally (as in
+listing~\ref{lst:add-key}) would be incredibly slow. Instead, we will reach for
+a compromise and create a new \code{WriteBatch} every $ N $ rows, where $ N *
+RowSize < MemorySize $.
+
+Separating the index building into multiple batches voids the guarantee of
+atomic index construction. Consider the case where \code{AddKey} crashes while
+trying to build a new index, after having created a new column family for it. If
+\code{PersistentState} continued to use this partially built index after
+recovering, its returned results would be faulty. This is where
+\code{PersistMeta()} comes in. By only writing metadata about the index
+\textit{after} it has been built, we ensure that any future recovery processes
+know how to differentiate a partially built index from a complete one. During
+recovery we can then check whether the index count corresponds to the column
+family count, and if it does not, simply drop the entire column family and
+rebuild the index again later.
