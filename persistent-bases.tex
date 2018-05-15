@@ -1387,21 +1387,3 @@ know how to differentiate a partially built index from a complete one. During
 recovery we can then check whether the index count corresponds to the column
 family count, and if it does not, simply drop the entire column family and
 rebuild the index again later.
-
-\subsection{Recovery}
-
-RocksDB recovers content that resided in its in-memory MemTables at the time of
-a crash by replaying entries from its write-ahead log. This is a stark
-improvement from recovery using Soup's regular write-ahead log, where every
-entry from the beginning of time has to be replayed. Data that is already
-persisted to durable SS-tables at the time of a crash require no extra work---
-they can be read in the same manner after crashing as before.
-
-What happens to Soup's partially materialized nodes? Similar to a regular
-caching solution, they start out completely empty after recovering. Subsequent
-requests gradually restore the nodes to a state resembling the one they were in
-before crashing. Fully materialized nodes require a complete view of the state
-at all times and need to be sent a full copy of the state when recovering. Both
-this, and the fact that partially materialized nodes start out empty, lead to
-reduced initial performance---a target of improvement addressed in the next
-chapter.
