@@ -1,26 +1,167 @@
 \chapter{Benchmarks}\label{chap:benchmarks}
 
 Soup includes a series of benchmarks designed to reproduce different real world
-workloads where usage of Soup might be appropriate. Additionally, this thesis
-introduces a couple of benchmarks that make it easier to see the positive and
-negative effects of the specific changes introduced.
+scenarios where usage of Soup might be appropriate. The Lobsters and Vote
+benchmarks existed prior to this thesis, while the Recovery and Replay
+benchmarks were explicitly built to highlight the positive and negative impact
+the features developed in this thesis have on Soup.
 
 \section{Hardware}
 
-\todo{move this to the evaluation section}
+\subsection{Server Setup 1: Local SSD}
+
 Unless otherwise specified, benchmarks are run on Dell PowerEdge R430 server
 with two Intel Xeon E5-2660 v3 CPUs and a total of 20 physical and 40 logical
-cores. The server has 64GB of DDR4 RAM running at a speed of 2200MHz, and two
-solid-state drives: a Samsung SSD 850 PRO and an Intel SSD S3710. The server
-runs Arch Linux.
+cores. The server has 64GB of DDR4 RAM running at a speed of 2200MHz, with two
+solid-state drives: a Samsung SSD 850 PRO and an Intel SSD S3710.
+
+\subsection{Server Setup 2: EC2 NVMe SSD}
+
+Some of the benchmarks require the workload generator and clients to be
+separated on a different machine than Soup itself. For these cases the
+benchmarks are run on Amazon's Elastic Compute Cloud (EC2)
+instances\furl{https://aws.amazon.com/ec2/instance-types/}, typically with the
+workload generator running on a machine with a large number of cores and the
+Soup server itself running on a server with fewer and faster cores.
+
+When Soup needs access to fast durable storage, an \code{m4.10xlarge} is used
+for the clients and an \code{i3.4xlarge} is used for the Soup workers. The
+\code{m4.10xlarge} server uses an Intel Xeon E5-2686 CPU with 40 logical cores
+and 160 GB of RAM.\@ The \code{i3.4xlarge} uses the same CPU as the \code{m4},
+but is backed by NVMe SSDs capable of extremely high throughput I/O.
+
+\subsection{Server Setup 3: EC2 RAM Disk}
+
+Similar to the setup in the previous section, the third setup makes use of two
+servers hosted on Amazon EC2---this time without fast durable storage. Instead,
+an \code{m5.12xlarge} and a \code{c5.4xlarge} is used. Both make use of newer
+Intel Xeon Platinum processors, with 48 cores and 192GB RAM on the \code{m5} and
+16 cores and 32GB RAM on the \code{c5}.
 
 \section{Lobsters}
 
-Lobsters\furl{http://lobste.rs/} is a news aggregation website built using Ruby
-on Rails, backed by MySQL.\@ Soup's Lobsters benchmark re-uses the queries run
-by the real Lobsters application, modeled after Lobsters production traffic to
-best resemble the actual workload the Lobsters servers face.
+\todo{In the Soup paper, the Lobsters benchmark is compared to MySQL (which it
+beats quite handily). Not sure if that is relevant for my thesis, but if it is,
+this section should be rewritten slightly to describe the different query sets
+used.}
+
+Lobsters\furl{http://lobste.rs/} is a news aggregation website where users post,
+vote and comment on links and discussions. Soup uses Lobsters to showcase the
+performance advantages of Soup in a real-world application. While Lobsters is
+built with Ruby on Rails, the Soup benchmark runs MySQL queries normally issued
+by Lobsters directly against Soup, using the MySQL protocol shim described in
+section~\ref{sec:mysql-shim}. This avoids the overhead of Ruby and Ruby on
+Rails, which quickly become bottlenecks when the Lobsters traffic is scaled
+beyond its regular workload.
+
+Whereas the other benchmarks focus on individual writes and reads, the Lobsters
+benchmark is measured in page views, where different pages execute a series of
+write and read queries. The distribution of page views is modeled after real
+Lobsters production traffic, to ensure the queries executed best resemble a real
+Lobsters setup.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{lobsters}
+  \caption{\
+    A subset of the Soup data-flow graph used to run the Lobsters benchmark.
+  }\label{fig:lobsters-graph}
+\end{figure}
+
+The database is seeded with the same amount of data as a real world Lobsters
+setup: 120 000 comments, 40 000 stories and 9200 users. The regular Lobsters
+queries rely on manual materializations and other optimizations to reach decent
+performance using MySQL.\@ Part of Soup's goal is to let developers write
+``natural'' queries, without caching or other denormalizing optimizations, and
+some of the Lobsters queries have been rewritten to better highlight this.
 
 \section{Vote}
+
+The Lobsters benchmark includes a wide variety of different queries, making it
+difficult to narrow down bottlenecks in Soup's query processing performance. The
+vote benchmark solves this by focusing on the most frequently run query in
+Lobsters, reading stories and their corresponding vote counts.
+
+\begin{listing}[H]
+  \begin{minted}[frame=lines]{sql}
+CREATE TABLE Article (id int, title varchar(255), PRIMARY KEY(id));
+CREATE TABLE Vote (article_id int, user int);
+
+QUERY ArticleWithVoteCount: SELECT Article.id, title, VoteCount.votes AS votes \
+            FROM Article \
+            LEFT JOIN (SELECT Vote.article_id, COUNT(user) AS votes \
+                       FROM Vote GROUP BY Vote.article_id) AS VoteCount \
+            ON (Article.id = VoteCount.article_id) WHERE Article.id = ?;";
+  \end{minted}
+
+  \caption{The schema used by the vote benchmark.}\label{lst:vote}
+\end{listing}
+
+The database is prepopulated with a series of articles, letting the write
+portion of the benchmark focus on writing votes, where each vote is assigned to
+an article following a uniform distribution. The vote benchmark runs either
+locally against a single Soup instance, or against a cluster of Soup workers.
+
+\todo{mention open loop and sojourn time}
+
 \section{Replay}
+
+Part of the promise of Soup is to avoid expensive computation when reading
+queries, by moving most of the workload to the write portion of the system. Read
+queries trigger replays for keys initially, while later reads are served
+directly by partially materialized state later in the graph. This makes it
+difficult to reason about the read performance of Soup's base nodes, as only a
+small portion of reads are bound to be served by the base nodes at all.
+
+This is where the replay benchmark comes in. Instead of possibly reading the
+same keys multiple times, the replay benchmark ensures that each key is only
+ever read \textit{once}, triggering a replay from the base nodes. Additionally,
+the schema is far simpler than in the vote benchmark, with a single base node
+and different variants of the same query. This is again done to further focus on
+the base nodes, avoiding excessive computation in partial nodes down the graph.
+
+\begin{listing}[H]
+  \begin{minted}[frame=lines]{sql}
+CREATE TABLE TableRow (
+  id int, c1 int, c2 int, c3 int, c4 int,
+  c5 int, c6 int, c7 int, c8 int, c9 int,
+  PRIMARY KEY(id)
+);
+
+# Primary key reads:
+QUERY ReadRow: SELECT * FROM TableRow WHERE id = ?;
+
+# Secondary key reads:
+QUERY query_c1: SELECT * FROM TableRow WHERE c1 = ?;
+..
+QUERY query_c9: SELECT * FROM TableRow WHERE c9 = ?;
+  \end{minted}
+
+  \caption{The schema used by the replay benchmark.}\label{lst:replay}
+\end{listing}
+
+While trifling for the regular Soup base node implementation, the difference
+between reading from a primary and secondary index might be consequential with
+persistent base nodes (see section~\ref{sec:persistent-bases}). To correctly
+assess this difference, the replay benchmark includes the possibility of reading
+either from a primary or secondary index. The row size is also slightly larger
+than in the other benchmarks, ensuring that the base nodes actually have to read
+a fair share of data from state.
+
+Prior to reading, Soup is populated with a given number of rows, which it then
+reads a uniform, and smaller, sample of. With persistent Soup the benchmark
+terminates after prepopulation, followed by a recovery step, to ensure that data
+is served directly from durable storage. The file system cache is also cleared
+after recovery and between subsequent benchmark runs.
+
 \section{Recovery}
+
+The final benchmark measures the recovery time of our voting application, using
+the schema described in listing~\ref{lst:vote}. The database is first populated
+with a series of articles and votes, before being shut down and recovered from.
+
+The benchmark produces two measures: initial and total recovery time. While the
+former states how long it takes for recovery to be initialized, the latter
+includes the time it takes until all readers start serving up to date data. With
+the readers residing at the bottom of the Soup query graph, this happens when
+any necessary updates have propagated through the entire graph.
