@@ -1,0 +1,563 @@
+\chapter{Recovery}
+
+\section{Logs}
+\section{Persistent Base Nodes}
+
+RocksDB recovers content that resided in its in-memory MemTables at the time of
+a crash by replaying entries from its write-ahead log. This is a stark
+improvement from recovery using Soup's regular write-ahead log, where every
+entry from the beginning of time has to be replayed. Data that is already
+persisted to durable SS-tables at the time of a crash require no extra work---
+they can be read in the same manner after crashing as before.
+
+What happens to Soup's partially materialized nodes? Similar to a regular
+caching solution, they start out completely empty after recovering. Subsequent
+requests gradually restore the nodes to a state resembling the one they were in
+before crashing. Fully materialized nodes require a complete view of the state
+at all times and need to be sent a full copy of the state when recovering.
+
+Both this, and the fact that partially materialized nodes start out empty, lead
+to reduced initial performance---a target of improvement addressed in the next
+section.
+
+\section{Snapshotting}\label{sec:snapshotting}
+
+While \code{PersistentState} speeds up base node recovery, it comes with no
+improvement for recovery of nodes further down the graph. Partial nodes have to
+trigger a large amount of replays to restore their state early on, while fully
+materialized nodes need a complete copy of the state altogether before serving
+any reads at all.
+
+\code{PersistentState} lets base nodes instantly recover to a recent point in
+time, capping recovery to the time it takes to go through recent updates. A
+similar solution for all materialized state would let nodes recover to a recent
+checkpoint, followed by re-application of log entries to become fully
+up-to-date. In short, we need to be able to consistently \textit{snapshot} the
+materialized nodes at any given point.
+
+The implementation in the rest of this section is based on an earlier version of
+this thesis~\cite{project}, submitted as a part of ``TDT4501 Computer Science,
+Specialization Project''.
+
+\subsection{Challenges}
+
+Main memory systems like VoltDB leverage checkpointing by persisting the
+transactional state of committed transactions, using log sequence numbers to be
+able to track which updates have been reflected on disk~\cite{voltdb-recovery}.
+In Soup, state is materialized at a variety of nodes throughout the graph, and
+updates have no timestamps or sequence numbers attached to them. Updates
+propagate through the graph asynchronously, and a specific update is likely to
+reach different points in the graph at separate times. Taking a global snapshot
+of the entire graph simultaneously would mean capturing nodes at different
+logical points, as an update might be in the process of propagating throughout
+the graph at the time that the snapshot is initiated.
+
+Soup's way of asynchronously propagating updates through its query-graph
+resembles the communication done in a distributed system. Being able to observe
+the global state in a distributed system---where access to a common clock is
+rare---is an immensely useful property, crucial to resolving a certain category
+of problems, such as deadlock detection.
+
+Chandy and Lamport first introduced the problem of acquiring a distributed
+snapshot in~\cite{chandy-lamport}, which has since been the source of
+inspiration for a wide variety of work within the field. Chandy and Lamport
+presented a solution aimed at distributed systems using first-in first-out
+channels, with preserved message ordering, by solving two main issues: deciding
+when to take a snapshot, and which messages should be part of said snapshot.
+
+The key insight in~\cite{chandy-lamport} was to introduce a marker message, used
+as a separator between messages that should be included in the snapshot, and
+messages that should not. Processes that receive a snapshot marker should
+immediately take a snapshot of all messages received prior to the marker, and
+forward the resulting state to a process capable of assembling all its received
+local snapshots to a global view of the system. The channels' FIFO property
+ensures the exclusion of messages arriving after the marker. The resulting
+algorithm requires $ O(e) $ messages to initiate a snapshot, where $ e $
+is the amount of edges in the graph. The messages can be sent out in parallel,
+resulting in a $ O(d) $ guarantee to complete the snapshot, where $ d $ is the
+diameter of the graph.
+
+Lai and Yang~\cite{lai-yang} later extended this scheme with support for
+non-FIFO channels with a solution that also removed the need for explicit
+control messages, piggy-backing the required snapshot information onto existing
+packets.
+
+\subsection{Algorithm}
+
+Taking a snapshot of a running Soup instance requires persisting the content of
+each materialized node in the current data-flow graph. This needs to happen at
+the same logical point in time---ensuring that every in-flight update is either
+propagated to \textit{all} nodes in the graph---or none of them, leading
+to a consistent state after recovering from a failure. At the same time, taking
+a snapshot should not incur a too heavy performance cost on the running system,
+and should definitely not stop the system from processing updates
+completely---for any period of time. This lets us derive a few base rules for
+our snapshotting algorithm:
+
+\begin{enumerate}
+  \item Snapshots need to include exactly the same updates across the graph.
+  \item Snapshotting should not significantly degrade the system's throughput.
+  \item Snapshots should complete in a reasonable amount of time.
+\end{enumerate}
+
+We can then use these rules to build a snapshotting algorithm in incremental
+steps, starting from an example that fails to meet the defined criteria.
+Figure~\ref{fig:bad-example} shows an update propagating through the Soup query
+graph. What would be the outcome if both of the partially materialized
+nodes---shown in a blue color---would snapshot their state at the exact moment
+shown in the graph? Whereas the leftmost domain has had time to process update
+\code{A}, the rightmost one has not. The two domains are at different
+\textit{logical} points in time, and the snapshots would fail our first rule.
+
+What if the system as a whole instead waited for the update to completely
+propagate through the graph before initiating the snapshot? This would
+successfully follow the first rule, but fail the second: no new updates could be
+served until the snapshot has completed across the graph, halting
+the system's throughput.
+
+\begin{figure}[H]
+  \centering
+  \includesvg[width=0.6\textwidth]{bad-example}
+  \caption{\
+    An update \texttt{A} propagates through the domains in the graph in an
+    asynchronous manner. Domains 2 and 3 contain at least one materialized node,
+    and should be snapshotted.
+  }\label{fig:bad-example}
+\end{figure}
+
+\subsubsection{Synchronous snapshotting}
+
+Soup's data-flow graph forwards updates over ordered FIFO channels, making it
+possible to rely on Chandy-Lamport's marker technique to determine which updates
+should be considered a part of a snapshot. Domains that receive the
+marker initiate the snapshot process right away, without any further processing
+of updates. This results in a global snapshot taken at the same \textit{logical}
+point in time, even if the actual snapshots were instantiated at different
+\textit{physical points}.
+
+\begin{figure}[H]
+  \centering
+  \includesvg[width=0.6\textwidth]{good-example}
+  \caption{\
+    An update \texttt{A} is propagated through the data-flow graph, followed by
+    a snapshot marker to ensure that domains with materialized nodes snapshot at
+    the correct time.
+  }\label{good-example}
+\end{figure}
+
+The controller initiates a snapshot by issuing a \code{TakeSnapshot} marker to
+each of its base nodes, which is then propagated through the rest of the graph.
+After a snapshot completes, the controller persists its \code{snapshot\_id} to
+durable storage, to ensure that it can inform domains which snapshot to recover
+from after a failure.
+
+\begin{listing}[H]
+  \begin{minted}[frame=lines]{python}
+InitializeSnapshot:
+  snapshot_id += 1
+  for node in base_nodes:
+    node.send(TakeSnapshot, snapshot_id)
+
+  for node in base_nodes:
+    node.wait_for_ack()
+
+  persist(snapshot_id)
+  \end{minted}
+
+  \caption{Initiating a snapshot from the controller.}
+\end{listing}
+
+Domains that receive a snapshot marker proceed with the snapshotting process
+immediately, without further processing of updates. After persisting the
+snapshot, nodes notify the controller that they have done so, letting it
+eventually discard log entries after confirming that all materialized nodes have
+successfully taken a snapshot of their state. Implemented naively, this would
+involve serializing each node's state at a domain and persisting these to
+disk---all while while blocking updates from the rest of the system (shown in
+listing~\ref{lst:naive}).
+
+
+\begin{listing}[H]
+  \begin{minted}[frame=lines]{python}
+TakeSnapshot:
+  for node in nodes:
+    if node.is_materialized:
+      state = serialize(node.state)
+      write(state)
+      notify_controller(snapshot_id)
+  \end{minted}
+  \caption{\
+    The beginning of a snapshot implementations for domains.
+  }\label{lst:naive}
+\end{listing}
+
+
+\subsubsection{Asynchronous snapshotting}\label{sec:async-snapshot}
+
+Our synchronous snapshotting algorithm fulfills the first snapshotting base rule
+through use of Chandy-Lamport's marker technique, by stopping further domain
+processing until the snapshot has completed. This involves writing the snapshot
+to durable storage---a potentially slow operation. To prevent this from
+significantly slowing down the system's throughput we would need to persist the
+snapshot in a separate computational unit---such as a thread---allowing the
+domain to continue its regular processing without pause.
+
+The algorithm shown in listing~\ref{lst:snapshot-worker} achieves this through a
+\code{SnapshotWorker} running in a separate thread, where the received state is
+serialized and persisted to durable storage before the controller is notified of
+its completion.
+
+\begin{listing}[H]
+  \begin{minted}[frame=lines]{python}
+SnapshotWorker:
+  for event in listener:
+      state = serialize(event.state)
+      write(state)
+      notify_controller(event.snapshot_id, event.state)
+
+TakeSnapshotAsync:
+  states = {}
+  for node in nodes:
+    if node.is_materialized:
+      states[node] = node.state.clone()
+
+  snapshot_worker.send(snapshot_id, states)
+  \end{minted}
+  \caption{\
+    A \code{SnapshotWorker} serializes and persists snapshot in a thread
+    separate from the regular domain processing.
+  }\label{lst:snapshot-worker}
+\end{listing}
+
+\subsubsection{Delayed snapshotting}
+
+Compared to the synchronous snapshotting algorithm---where processing is
+parallelized across all available domains---our asynchronous version restricts
+the number of parallel units to a fixed set of snapshotting workers. This number
+is likely to be far less than the number of domains, introducing a trade-off
+between snapshot completion time and the extra load induced on the system. The
+former is irrelevant as long as each snapshot completes before the next request
+arrives, and the focus should without doubt be on avoiding a potential
+performance hit to the processing throughput.
+
+While the introduction of asynchronous snapshot workers move the bulk of the
+snapshot processing out of the domains' main thread, the state clone operation
+remains. This is a crucial part in maintaining the correctness of
+Chandy-Lamport's marker technique, and snapshots would not happen at the correct
+logical instant without it. Still, with snapshots happening roughly at the same
+physical time across the graph, the pause required from cloning a domain's
+entire state could have a significant impact on the system's total throughput.
+
+\todo{should have a figure here}
+
+Instead, we would like to amortize the performance penalty across a larger time
+range, by delaying the snapshotting process at each individual domain. While
+snapshots would still need to happen at the same \textit{logical} point across
+the graph, the \textit{physical} instant could vary. Naturally, this could be
+achieved by cloning the state immediately and only forwarding the result later
+on---without any gain at all. To actually spread out the cost of snapshotting we
+would need to delay the clone as well.
+
+A clone of a domain's state has to be taken at some point, but preferably later
+than when the snapshot marker arrives. This would require the ability to travel
+back in time from a state $ S_m $ to the original state when the marker arrived,
+$ S_n $. In short, with $ L_{n..m} $ signifying the updates that arrived from $
+n $ to $ m $, $ S_n $ can be re-created through $ S_n - L_{n..m} $.
+The amount of work performed by a single domain would be higher, but in return
+the individual clone operations performed across all domains could be delayed,
+preventing a global performance penalty.
+
+\begin{listing}[H]
+  \begin{minted}[frame=lines]{python}
+TakeSnapshotDelayed:
+  states = {}
+  for node in nodes:
+    if node.is_materialized:
+      current_state = node.state.clone()
+      states[node] = current_state - processed_updates[node]
+
+  snapshot_worker.send(snapshot_id, states)
+  \end{minted}
+  \caption{\
+    A delayed implementation of \texttt{TakeSnapshotAsync} from
+    listing~\ref{lst:snapshot-worker}. Updates arriving after the marker are
+    stored in \code{processed\_updates}.
+  }
+\end{listing}
+
+\subsubsection{Snapshot confirmations}
+
+The controller should be notified of all completed snapshots, as shown in
+listing~\ref{lst:snapshot-ack}. The snapshots are already persisted to disk
+prior to this, removing the need to include data in the acknowledgment messages.
+The messages should on the other hand include the current snapshot identifier,
+so that the controller eventually knows when the entire graph has completed the
+same snapshot. At that point the snapshot identifier can be persisted to
+ZooKeeper, and any log entries for updates prior to the snapshot being taken can
+be discarded. Recovery is then a matter of first loading each materialized
+node's state from their local snapshot, followed by replaying the rest of the
+log entries available.
+
+\begin{listing}[H]
+  \begin{minted}[frame=single]{python}
+ReceiveSnapshotAck(domain_id, snapshot_id):
+  snapshot_ids[domain_id] = snapshot_id
+  if min(snapshot_ids) == snapshot_id:
+    persist_snapshot_id(snapshot_id)
+  \end{minted}
+  \caption{\
+    The controller listens for snapshot acknowledgments from snapshot workers,
+    updating an internal data structure with a mapping from domain to
+    \code{snapshot\_id} on each received confirmation. When all domains have
+    completed their snapshots, the controller persists the
+    \code{snapshot\_id}, so that it later on can be used for recovery.
+  }\label{snapshot_acks}
+\end{listing}
+
+
+\subsubsection{Failure before discarding the log}
+
+In the event of a failure \textit{after} the controller has persisted the
+snapshot ID to ZooKeeper, but \textit{before} all nodes have managed to discard
+the correct log entries from durable storage, duplicate replaying of those log
+entries upon recovery is a possibility. To prevent this from happening, each log
+entry should include their domain's current snapshot ID, so that log entries
+corresponding to old snapshots can be ignored during recovery.
+
+\subsection{Implementation}
+
+The snapshotting implementation roughly follows along the lines of the
+asynchronous snapshotting algorithm described in
+section~\ref{sec:async-snapshot}. Snapshots are initiated with a specific marker
+sent by the controller, domains process snapshots by cloning their nodes' state,
+and snapshot workers are responsible for serializing and persisting the
+snapshots. Finally, the loop is closed when the controller is notified of each
+domain's completed snapshots.
+
+\subsubsection{Initializing a snapshot}
+
+Snapshots are initialized by the controller using a special marker packet,
+\code{TakeSnapshot}. This happens at a regular interval, defined by the
+configuration option \code{snapshot\_timeout}. The controller processes events
+in an event loop, and snapshots are triggered by emitting an event to this
+internal loop. This is done from a separate thread, which sleeps until it is
+time to take a snapshot.
+
+\begin{figure}[H]
+  \begin{center}
+    \includesvg[width=0.4\textwidth]{take-snapshot}
+    \caption{\
+      Snapshots are initialized when the controller sends a
+      \texttt{TakeSnapshot} packet, which is forwarded through the data-flow
+      graph by each domain.
+    }\label{fig:take-snapshot}
+  \end{center}
+\end{figure}
+
+When the controller's main loop receives a request to initialize a snapshot, it
+first makes sure that it has received all confirmations from previous snapshots
+before proceeding. Then it increments its \code{snapshot\_id} and fires off a
+\code{TakeSnapshot} packet to each of the base node domains in its data-flow
+graph. No further blocking is required: snapshot acknowledgments are handled
+separately.
+
+\subsubsection{Domain snapshotting}
+
+Whenever a domain receives a \code{TakeSnapshot} packet, it immediately clones
+the state of each of its materialized nodes. Each domain then forwards the
+snapshotting packet to its children, ensuring that all materialized
+nodes eventually get snapshotted. Finally, it sends the cloned states to its
+\code{SnapshotWorker}, by issuing a \code{PersistSnapshotRequest}.
+
+\code{TakeSnapshot} packets are forwarded to descendant domains through the
+egress nodes in the data-flow graph. Each domain is connected to its children
+through egress nodes and its ancestors through ingress nodes. With domains
+running in separate computational units, the snapshotting process can complete
+out of order at different domains.
+
+\subsubsubsection{Nodes and readers}
+
+The snapshotting algorithm describes persisting the state of materialized nodes.
+Although that is true, reality is slightly more nuanced. Materialized nodes in
+Soup can be both internal and external, where the latter is represented by
+readers (see section~\ref{sec:soup-readers}). Both the internal nodes and the
+readers can be either partially or fully materialized, where only partial nodes
+require support from their parent nodes to fulfill certain queries.
+
+Whether a node is partially or fully materialized does not make much of a
+difference for the snapshotting algorithm. On the other hand, internal and
+external nodes require slightly different snapshotting and recovery methods.
+This comes as a result of how state is stored within the two: whereas the former
+use Soup's own \code{State} data structure, the latter makes use of the
+\code{evmap}~\cite{evmap} library.
+
+\subsection{Performing snapshot requests}
+
+While each domain is responsible for gathering up the cloned copies of state
+needed to eventually recover from a failure, the actual serialization and
+persisting of snapshots happens in separate snapshot workers. The current
+implementation utilizes one snapshot worker per worker pool, resulting in one
+thread per running Soup instance. This could be increased as needed, but it is
+favorable that snapshots happen over a longer time to prevent reducing the
+system's throughput during the snapshotting process.
+
+When a domain has finished cloning the state of its materialized nodes, it
+notifies its local snapshot worker through an asynchronous and unbounded
+buffered
+\code{channel}\furl{https://doc.rust-lang.org/std/sync/mpsc/fn.channel.html}.
+This ensure that snapshot processing can continue separately, without blocking
+the domain's regular workload. The snapshot workers receive and process
+\code{PersistSnapshotRequest} events one by one. The processing involves
+serializing the cloned state, persisting it disk, and finally notifying the
+controller of a domain's snapshot completion.
+
+\subsection{Receiving snapshots confirmations}
+
+The controller listens for snapshot confirmations on a TCP socket normally used
+for coordination messages between the controller and its individual workers.
+Whenever it receives an acknowledgment packet from a snapshot worker, it stores
+the given \code{snapshot\_id} in a \code{HashMap} mapping each domain containing
+at least one materialized node to their current snapshot ID.\@ Note that domains
+can be sharded, so each instance in the map represents an individual shard of a
+single domain.
+
+\begin{figure}[H]
+  \includesvg[width=\textwidth]{snapshot-id}
+  \caption{\
+    The controller keeps track of each domain shard's \texttt{snapshot\_id} as
+    the snapshot confirmations arrive. When all shards have been snapshotted,
+    the controller's \texttt{snapshot\_id} is persisted.
+  }\label{fig:snapshot-id}
+\end{figure}
+
+When all shards have completed its snapshot, the current \code{snapshot\_id} is
+persisted to ZooKeeper, allowing the next snapshot to be initiated.
+
+\subsection{Logging and snapshotting}
+
+To be able to discern between log entries created before and after a given
+snapshot, log entries are annotated with the ID of the last snapshot persisted
+for that specific node. This lets the recovery process ignore any log entries
+created prior to the snapshot being restored.
+
+\begin{listing}[H]
+  \begin{minted}{json}
+[0, [[{"Positive": [{"Int": 1}, {"Int": 0}]}]],
+[1, [[{"Positive": [{"Int": 1}, {"Int": 1}]}]]]
+[1, [[{"Positive": [{"Int": 1}, {"Int": 2}]}]]]
+  \end{minted}
+  \caption{\
+    Separate log lines for a given base node. Each line is on the format shown
+    in listing~\ref{lst:log-entry}, with the addition of a prefixed
+    \code{snapshot\_id}.
+  }
+\end{listing}
+
+The snapshot ID used for log annotations is the ID of the latest snapshot
+initiated at that domain, regardless if the global snapshot with that ID has
+finished yet or not---it is \textit{optimistic}. In the event of a failure any
+unfinished snapshots are simply ignored, and the log entries are relied on
+instead. As an example, consider a domain that is in the process of taking a
+snapshot with ID $ X $. A failure occurring after that domain has snapshotted,
+but before the entire graph has done so, would lead to each domain recovering
+the snapshot with ID $ X - 1 $, ignoring any log entries with $ snapshot\_id < X
+- 1 $.
+
+\subsection{Recovering from a snapshot}
+
+Snapshot recovery comes as a supplement to the log based recovery described in
+section~\ref{sec:log-recovery}. It is initialized when the controller sends a
+\code{StartRecovery} packet to each of its base node domains, containing the ID
+of the snapshot that was last persisted across the entire data-flow graph. The
+ID is read from ZooKeeper, ensuring that it survives across failures.
+
+When the base node domains receive the recovery packets, they initialize the
+recovery process by first restoring snapshots, before replaying any updates that
+are left from log entries. Before this, the recovery packet is forwarded on to
+the rest of the graph. Unlike log based replays, snapshots have to be restored
+at each materialized node across the \textit{entire} graph---not solely at the
+base nodes. Forwarding the recovery packet prior to replaying log entries is
+crucial, as it ensures that snapshot recovery happens ahead of log based
+recovery for every node---not just the base nodes.
+
+\subsection{Serialization and deserialization of snapshots}
+
+Snapshots are serialized representations of each node's materialized state. The
+state itself is serialized from its Rust representation to a series of bytes
+using the \code{bincode} library, as described in section~\ref{sec:bincode} and
+shown in listing~\ref{lst:ser-snapshot}.
+
+\begin{listing}[H]
+  \begin{minted}[frame=lines]{rust}
+// Implementing the Serialize and Deserialize traits makes it
+// possible for bincode to serialize and deserialize the State struct:
+#[derive(Clone, Serialize, Deserialize)]
+pub struct State<T: Hash + Eq + Clone + 'static> {
+    state: Vec<SingleState<T>>,
+    by_tag: HashMap<Tag, usize>,
+    rows: usize,
+}
+
+// Serialization:
+let file = File::create(&filename)
+  .expect(&format!("Failed creating snapshot file: {}", filename));
+let mut writer = BufWriter::new(file);
+bincode::serialize_into(&mut writer, &state, bincode::Infinite)
+  .expect("bincode serialization of snapshot failed");
+
+// And deserialization:
+let file = File::open(&filename)
+  .expect(&format!("Failed reading snapshot file: {}", filename));
+let mut reader = BufReader::new(file);
+bincode::deserialize_from(&mut reader, bincode::Infinite)
+  .expect("bincode deserialization of snapshot failed")
+  \end{minted}
+  \caption{\
+    State is serialized and deserialized using \texttt{bincode}~\cite{bincode}.
+  }\label{lst:ser-snapshot}
+\end{listing}
+
+\subsection{Snapshot compression}
+
+Writing to and reading from disk is a significant part of the work being done
+during snapshotting and recovery. Both of these are naturally influenced by the
+performance of the underlying storage medium. Compressing snapshots before they
+are persisted would lower the amount of bytes being written, at the expense of
+CPU cycles needed to compress the data before doing so.
+
+Compression in Rust can be done using the \code{flate2}
+library\furl{https://docs.rs/flate2/}, which supports a series of formats and
+backends. By working on streams, \code{flate2} composes well with the
+serialization library used for snapshotting, \code{bincode}.
+
+\begin{listing}[H]
+  \begin{minted}[frame=lines, escapeinside=||]{rust}
+// Serialization:
+let file = File::create(&filename)
+  .expect(&format!("Failed creating snapshot file: {}", filename));
+let buffered = BufWriter::new(file);
+|\colorbox{lime}{let mut writer = ZlibEncoder::new(buffered, Compression::default());}|
+bincode::serialize_into(&mut writer, &state, bincode::Infinite)
+  .expect("bincode serialization of snapshot failed");
+
+// And deserialization:
+let file = File::open(&filename)
+  .expect(&format!("Failed reading snapshot file: {}", filename));
+let buffered = BufReader::new(file);
+|\colorbox{lime}{let mut reader = ZlibDecoder::new(buffered);}|
+bincode::deserialize_from(&mut reader, bincode::Infinite)
+  .expect("bincode deserialization of snapshot failed")
+  \end{minted}
+  \caption{\
+    Serialization and deserialization of compressed snapshots using
+    \texttt{bincode} and \texttt{flate2}.
+  }
+\end{listing}
+
+\subsection{Persisted data}
+
+Soup persists data to both local files and ZooKeeper as a part of the
+snapshotting and recovery process. Individual snapshots are written to durable
+storage locally at each domain, while the ID of the last completed global
+snapshot is stored in ZooKeeper, ensuring consensus between the replicated Soup
+controllers.
