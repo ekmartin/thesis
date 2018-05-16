@@ -1,6 +1,69 @@
 \chapter{Recovery}
 
-\section{Logs}
+\section{Write-ahead log}
+
+Soup appends all updates to a durable write-ahead log prior to sending out write
+acknowledgments. Packets are buffered up using a group-commit
+scheme~\cite{main-memory} to amortize the I/O cost of writing to durable
+storage. Commits result in a merged packet injected into the data-flow graph,
+ensuring that all changes are persisted to disk before being accessed by
+readers.
+
+Merging the data from multiple packets before writing to the WAL drastically
+increases the throughput of the system. Not only does it reduce the amount of
+I/O operations required for a single packet, gathering up more records in a
+single unit also reduces the number of packets to feed through the data-flow graph.
+
+% TODO: bad sentence ^
+
+\subsection{Log based recovery}
+
+In a traditional relational database management system, log recovery often
+involves multiple phases. Following a system like ARIES (described in
+section~\ref{sec:aries}), log recovery is responsible for a wide variety of
+tasks, such as undoing aborted transactions. Log recovery in Soup is much
+simpler, with log entries only including the actual operations to be performed
+(sometimes referred to as command logging~\cite{voltdb-recovery})---not the
+result they have on the database. There are no \code{UNDO} nor \code{REDO}
+phases either: only committed transactions result in persisted log entries.
+
+Log recovery is then a matter of replaying the writes from the persisted logs on
+start-up, by feeding them into the data-flow graph's base nodes as if they were
+regular updates. Each line in the log corresponds to a packet that was once
+injected into the Soup instance's data-flow graph, now serialized using JSON.\@
+
+\begin{listing}[H]
+  \begin{minted}{json}
+[
+  [{"Positive": [{"Int": 1}, {"Int": 0}]}],
+  [{"Positive": [{"Int": 1}, {"Int": 1}]}],
+  [{"Positive": [{"Int": 1}, {"Int": 2}]}]
+]
+  \end{minted}
+  \caption{\
+    An expanded line from one of the log files of the example application from
+    section~\ref{sec:example}, corresponding to a single batched update with
+    three records.
+  }\label{lst:log-entry}
+\end{listing}
+
+Log entries are separated by a newline character, where each line in the log is
+valid JSON.\@ This lets the recovery process handle one line at a time in a
+buffered fashion, avoiding the need to store the entire log in memory. Similar
+to how the packets were created in the first place, individual updates from each
+log entry are batched into chunks, before finally being turned into separate
+packets that are passed on to the rest of the data-flow graph. This speeds up
+recovery performance by avoiding processing of a potentially large amount of
+small log entries.
+
+
+\begin{figure}[H]
+  \includesvg[width=\textwidth]{log-chunking}
+  \caption{\
+    Log entries are flattened, then chunked into individual packets.
+  }\label{fig:log-chunking}
+\end{figure}
+
 \section{Persistent Base Nodes}
 
 RocksDB recovers content that resided in its in-memory MemTables at the time of
@@ -299,7 +362,7 @@ node's state from their local snapshot, followed by replaying the rest of the
 log entries available.
 
 \begin{listing}[H]
-  \begin{minted}[frame=single]{python}
+  \begin{minted}[frame=lines]{python}
 ReceiveSnapshotAck(domain_id, snapshot_id):
   snapshot_ids[domain_id] = snapshot_id
   if min(snapshot_ids) == snapshot_id:
