@@ -88,12 +88,29 @@ performed during the lifetime of the HotCRP conference review
 program~\cite{hotcrp}---which uses MySQL---showed that these delays were rare,
 with Soup being able to transition 95\% of all schema changes without downtime.
 
+\todo{figure of a changing data-flow graph}
+
 Changes to the base table schema happen in-place, and Soup's base nodes retain a
 full history of columns for each table. This ensures that both existing and new
 requests can be served alongside each-other, allowing the data-flow graph to
 transition without downtime.
 
+\subsubsection{Domains}
+
 \subsubsection{Evictions}
+
+To ensure that partial state does in fact remain partial over time, Soup evicts
+data when necessary. Currently this happens when Soup's memory-limit goes beyond
+an application-defined limit. This triggers an eviction notice sent to the
+largest domain---measured in state-size---which then takes care of propagating
+this eviction notice downstream in the graph to any nodes that might depend on
+the evicted state.
+
+\todo{might not be necessary, but could have an eviction figure here}
+
+The keys to evict at a specific node are picked randomly. In the future, this
+could be improved through more sophisticated eviction strategies, such as only
+evicting the least-recently used records.
 
 \subsection{MySQL Shim}
 
