@@ -68,6 +68,33 @@ queries---\textit{replays}---to nodes further up the graph. Similar to cache
 misses in other systems these eventually propagate all the way up to the base
 nodes, where a full copy of the state is always maintained.
 
+\subsubsection{Migrations}
+
+Schema migrations are inevitable in long-running applications: business
+requirements change, projects are refactored, and new features are added.
+Performing migrations on traditional database systems, without downtime, is on
+the other hand far from trivial~\cite{stripe, gh-ost}. While Soup requires both
+the schema \textit{and} all queries to be defined, it handles changes in both
+seamlessly.
+
+Added queries extend the existing data-flow with additional nodes, while
+re-using as much as possible of the existing graph. New partially materialized
+nodes can start serving requests right away, by fetching data from ancestor
+nodes if necessary. This is not the case with fully materialized nodes, which
+require a full representation of their state at all times. To bring these nodes
+online, Soup incurs a full replay of all the state needed, potentially delaying
+new requests until all replays have completed. Review of all the migrations
+performed during the lifetime of the HotCRP conference review
+program~\cite{hotcrp}---which uses MySQL---showed that these delays were rare,
+with Soup being able to transition 95\% of all schema changes without downtime.
+
+Changes to the base table schema happen in-place, and Soup's base nodes retain a
+full history of columns for each table. This ensures that both existing and new
+requests can be served alongside each-other, allowing the data-flow graph to
+transition without downtime.
+
+\subsubsection{Evictions}
+
 \subsection{MySQL Shim}
 
 Soup supports a decent subset of SQL in its query definitions. Regardless, using
