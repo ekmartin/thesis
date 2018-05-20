@@ -97,6 +97,47 @@ transition without downtime.
 
 \subsubsection{Domains}
 
+Soup's data-flow graph is partitioned into \textit{domains}, each containing a
+series of nodes. Updates are processed at separate domains asynchronously, in
+different computational units---threads, or other machines altogether for
+distributed Soup. Within a single domain, packets are processed synchronously,
+one at a time, removing the need for locking within domains. Packet processing
+at domains include both regular updates and other types of packets, such as
+replay requests.
+
+\todo{figure that shows different domains}
+
+Domains are separated by egress and ingress nodes, responsible for maintaining
+communication across domain boundaries using a buffered channel. When Soup is
+run in a distributed fashion, communication between separate domains happen
+here, over TCP sockets.\@
+
+\subsubsection{Sharding}
+
+Distributing domains across computational units lets Soup divide its
+computational load between a cluster of machines. This is only an improvement if
+the load is uniformly spread across all domains. When that is not the case, and
+a majority of the data is skewed towards a single domain, Soup is left to
+processing most of the requests in a single computational unit. This is where
+sharding comes in. By splitting the atom that is a single domain into multiple
+shards, both the computational load and the data stored at that domain can be
+spread between multiple computational units.
+
+\todo{show a figure with a sharder?}
+
+Balancing the data across a cluster is essential in scaling Soup to larger
+data-sets. Without it, Soup's capabilities would be capped at the memory size of
+the largest machine in the cluster. Soup shards data by hash-partitioning keys
+statically. This is unfortunate for workloads skewed towards a small key subset,
+where only a few domains might end up serving most of the requests received.
+Dynamic sharding would help here and is a future goal for Soup.
+
+When necessary, a \textit{sharder} node is inserted between domains, translating
+between sharding schemes in separate domains. This allows nodes further down in
+the graph to remain partial, at the cost of having to replay state across
+domains.
+
+
 \subsubsection{Evictions}
 
 To ensure that partial state does in fact remain partial over time, Soup evicts
