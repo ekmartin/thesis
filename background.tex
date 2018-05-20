@@ -2,6 +2,72 @@
 
 \section{Soup}
 
+Building sophisticated web applications while scaling to potentially millions of
+users forces developers to compromise between performance, user requirements,
+and application complexity. Whereas traditional relational databases logically
+are able to fulfill the increasingly complex storage demands of today's internet
+businesses, they are far from able to do so at the scale and performance
+required. To continue serving requests at increasing throughputs with low
+latencies, developers introduce mitigation strategies ranging from complex cache
+hierarchies~\cite{memcached} to denormalized schemas~\cite{denormalization}.
+
+These methods are usually used to drastically improve read performance, while
+penalizing write throughput and increasing application complexity. Soup sets out
+to solve this dilemma once and for all, with a structured storage system capable
+of horizontally scaling to millions of reads per second, without the need for
+complex cache deployments or manual maintenance of materialized views.
+
+\subsection{Data-flow}
+
+Soup achieves this through use of an incrementally maintained data-flow graph.
+New updates propagate through the graph at write-time, with pre-computed results
+stored at selected \textit{materialized} nodes throughout the graph. This
+moves the bulk of the workload from reads to writes, by allowing read operations
+to directly access computed state from materialized nodes further down the
+graph.
+
+Applications using Soup define base table schemas and a set of queries ahead of
+time. Whereas the former is common in traditional relational database management
+systems, the latter is not, and is the primary source of Soup's read performance
+improvements. A relational database computes the result of queries on-the-fly by
+parsing queries into a query-graph, which it then executes. This requires
+potentially costly computations to be performed multiple times for separate
+queries, while throwing away intermediary results that could be re-used. Soup
+instead builds a \textit{data-flow} graph from its pre-defined queries,
+propagating each update through it at write-time. Computations can then be
+incrementally maintained on each write, reducing the work needed by a
+read-operation to something more similar to a simple key-value read in a caching
+system.
+
+\begin{listing}[H]
+  \begin{minted}[frame=lines]{sql}
+CREATE TABLE Car (id int, brand varchar(255), PRIMARY KEY(id));
+QUERY CountCars: SELECT COUNT(*) FROM Car WHERE brand = ?;
+  \end{minted}
+
+  \caption{An example base table with a corresponding
+  query.}\label{lst:example-schema}
+\end{listing}
+
+Implemented naively, incrementally maintaining a data-flow graph for each query
+would have disastrous storage consequences. Each query would need a separate
+graph, duplicating data across a range of nodes. Instead, Soup builds a single
+data-flow graph from all of its queries, recognizing common sub-expressions
+where possible~\cite{common-expression}. That still leaves the issue of what
+state to incrementally maintain. With queries consisting of a potentially large
+amount of nodes, materializing data at each step would lead to significant
+overlap between nodes. Instead, Soup only materializes and incrementally
+maintains state at nodes it considers \textit{stateful}, with other nodes
+referring upwards in the graph to its closest materialized ancestor node.
+
+The state at these materialized nodes is also kept \textit{partial} whenever
+possible. Instead of storing the results for all queries---like a materialized
+view does---Soup only retains state for records in the application's working
+set, evicting rarely used data. Queries for missing keys result in ancestor
+queries---\textit{replays}---to nodes further up the graph. Similar to cache
+misses in other systems these eventually propagate all the way up to the base
+nodes, where a full copy of the state is always maintained.
+
 \subsection{MySQL Shim}
 
 Soup supports a decent subset of SQL in its query definitions. Regardless, using
