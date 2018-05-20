@@ -26,6 +26,8 @@ moves the bulk of the workload from reads to writes, by allowing read operations
 to directly access computed state from materialized nodes further down the
 graph.
 
+\todo{figure that compares a traditional query graph to soup's data-flow}
+
 Applications using Soup define base table schemas and a set of queries ahead of
 time. Whereas the former is common in traditional relational database management
 systems, the latter is not, and is the primary source of Soup's read performance
