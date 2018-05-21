@@ -79,5 +79,21 @@ existing data between each test run, after flushing the disk caches.
 
 \subsection{SS-table format}
 
+RocksDB provides two separate SS-table implementations, \code{BlockBasedTable}
+and \code{PlainTable}.
+
+\todo{write more!}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{graphs/replay-table}
+  \caption{\
+    Soup replay performance comparison between \code{BlockBasedTable} and
+    \code{PlainTable}.
+  }\label{graph:replay-table}
+\end{figure}
+
+
+
 \section{Mixed workload}
 \section{Recovery}

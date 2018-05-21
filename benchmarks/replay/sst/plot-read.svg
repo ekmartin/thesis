@@ -138,7 +138,7 @@
 <polyline points='641.80,101.31 643.28,103.88 640.32,103.88 ' style='stroke-width: 0.71; stroke: none; fill: #000000; fill-opacity: 0.80;' clip-path='url(#cpMHw3MjB8Mjg4fDA=)' />
 <line x1='634.89' y1='103.02' x2='648.71' y2='103.02' style='stroke-width: 1.07; stroke-dasharray: 2.85,2.85; stroke-linecap: butt;' clip-path='url(#cpMHw3MjB8Mjg4fDA=)' />
 <g clip-path='url(#cpMHw3MjB8Mjg4fDA=)'><text x='652.60' y='88.89' style='font-size: 8.80px; font-family: Arial;' textLength='56.25px' lengthAdjust='spacingAndGlyphs'>rocksdb_block</text></g>
-<g clip-path='url(#cpMHw3MjB8Mjg4fDA=)'><text x='652.60' y='106.17' style='font-size: 8.80px; font-family: Arial;' textLength='46.95px' lengthAdjust='spacingAndGlyphs'>rocksdb_sst</text></g>
+<g clip-path='url(#cpMHw3MjB8Mjg4fDA=)'><text x='652.60' y='106.17' style='font-size: 8.80px; font-family: Arial;' textLength='54.30px' lengthAdjust='spacingAndGlyphs'>rocksdb_plain</text></g>
 <rect x='627.49' y='128.67' width='40.57' height='75.37' style='stroke-width: 1.07; stroke: none; fill: #FFFFFF;' clip-path='url(#cpMHw3MjB8Mjg4fDA=)' />
 <g clip-path='url(#cpMHw3MjB8Mjg4fDA=)'><text x='633.16' y='142.21' style='font-size: 11.00px; font-family: Arial;' textLength='14.67px' lengthAdjust='spacingAndGlyphs'>pct</text></g>
 <rect x='633.16' y='146.53' width='17.28' height='17.28' style='stroke-width: 1.07; stroke: #FFFFFF; fill: #F2F2F2;' clip-path='url(#cpMHw3MjB8Mjg4fDA=)' />

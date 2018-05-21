@@ -642,7 +642,7 @@ backwards compatibility, the default API methods operate on the same column
 family, ``default'', with separate methods taking in an additional column family
 argument.
 
-\subsection{Different MemTable implementations}
+\subsection{Customizing the MemTable implementation}
 
 RocksDB provides multiple implementations of its in-memory
 MemTables\furl{https://github.com/facebook/rocksdb/wiki/MemTable}, which can be
@@ -688,6 +688,17 @@ default).
 Finally, RocksDB also provides a MemTable factory heavily tuned for random
 insertions, with abysmal performance for everything else. This makes it only
 useful for bulk loading data as fast as possible.
+
+\subsection{Customizing the SS-table implementation}
+
+The default SS-table implementation is based on the original format from
+LevelDB, \code{BlockBasedTable}. As the name implies, data is stored in separate
+blocks, where each file's initial block is a filter on the rest of the contents.
+
+\todo{write more here}
+
+RocksDB also provides an improved format designed for low query latency on
+modern storage media, \code{PlainTable}.
 
 \subsection{RocksDB from Rust}
 While RocksDB is written in C++ it provides a separate API through its
