@@ -276,6 +276,37 @@ Reads access double-buffered hash tables directly~\cite{evmap}, without the need
 for locks. Writes update one of the buffers, and expose updated content to the
 readers with an atomic swap.
 
+\subsection{Architecture}
+
+\todo{figure}
+
+\subsubsection{Controller}
+
+At the heart of Soup lies a replicated controller, with a leader elected
+using ZooKeeper~\cite{zookeeper}. The controller is the first point of contact
+for Soup's external APIs, and is responsible for managing meta state, such as
+schemas and queries.
+
+\subsubsection{Souplets}
+
+Processing of updates happen within the Souplets---Soup's worker nodes. Each
+Souplet includes a pool of threads which together go through the incoming
+packets for its domains. While maximum one thread can process updates for a
+domain at once, multiple domains can process updates in parallel. Earlier
+versions of Soup ran domains in separate threads altogether, resulting in a
+core-constrained system when the number of domains went far beyond the host's
+CPU core count.
+
+Communication between the Souplets and the controller happens over TCP, at the
+coordination layer.
+
+\subsubsection{Readers}
+
+Soup's reader nodes make use of double-buffered hash tables to make it possible
+to read and write to a single data structure at the same time. To prevent high
+throughput write processing from slowing down reads, read requests are processed
+by separate threads---readers.
+
 \subsection{Interacting with Soup}
 
 Applications using Soup define a base table schema and a set of corresponding
@@ -337,8 +368,7 @@ println!("{}", awvc.lookup(&[aid.into()], true));
   followed by a read of the vote count.}\label{lst:soup-api}
 \end{listing}
 
-
-\subsection{MySQL Shim}
+\subsection{MySQL Shim}\label{sec:mysql-shim}
 
 Soup supports a decent subset of SQL in its query definitions. Regardless, using
 Soup in an application requires significant changes: all queries have to be
@@ -878,7 +908,7 @@ blocks, where each file's initial block is a filter on the rest of the contents.
 RocksDB also provides an improved format designed for low query latency on
 modern storage media, \code{PlainTable}.
 
-\subsection{RocksDB from Rust}
+\subsection{RocksDB from Rust}\label{sec:rust-rocksdb}
 While RocksDB is written in C++ it provides a separate API through its
 C-bindings, which are used to call into it from a variety of different
 languages\furl{https://github.com/facebook/rocksdb/blob/master/LANGUAGE-BINDINGS.md}.
