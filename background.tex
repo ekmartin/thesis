@@ -155,6 +155,93 @@ The keys to evict at a specific node are picked randomly. In the future, this
 could be improved through more sophisticated eviction strategies, such as only
 evicting the least-recently used records.
 
+\subsection{Operators}
+
+Soup's data-flow graph consists of relational operators, where each operator
+emits either the \code{Positive} or the \code{Negative} records required for
+downstream nodes to maintain their state accordingly.
+
+\subsubsection{Base nodes}
+
+Every packet that reaches Soup is first injected into an appropriate base node,
+similar to a table in a relational database. This is where external API requests
+are translated into a language the rest of the data-flow graph understands.
+While clients might issue \eg deletion requests by \textit{key}, the base nodes
+translate the request into a \code{Negative} record for the entire row, which
+the rest of the data-flow graph can use to invalidate removed state. Update
+requests are likewise first translated into a \code{Negative} record, followed
+by a \code{Positive} record containing the new row.
+
+Whereas other stateful nodes can keep their state \textit{partial}, choosing
+which records to maintain and which to discard, base nodes always remain fully
+materialized at all times.
+
+\subsubsection{Stateless operators}
+
+Stateless operators process updates with no regard for prior events, without
+maintaining any state at all. The operators that fall within this category are
+\textit{pure functions}, such as the \textit{projection} and \textit{filter}
+operators. The former pick out one or more fields from each incoming row, while
+the latter determines if a row should be forwarded through the data-flow graph
+or not.
+
+While Soup is free to insert operators into its data-flow graph as it sees fit,
+both projections and filters can often be mapped directly to a part of an SQL
+query. \code{SELECT name \dots} would result in the projection shown in
+figure~\ref{fig:project}, while a \code{WHERE}-clause on the form of \code{WHERE
+age < 10} would produce a filter operator emitting only records where \code{age
+< 10} is true.
+
+\begin{figure}[H]
+  \centering
+  \includesvg[width=0.3\textwidth]{project}
+  \caption{A projection operator responsible for picking out the \code{name}
+  column of incoming records.}\label{fig:project}
+\end{figure}
+
+\subsubsection{Stateful operators}
+
+Whereas stateless operators resemble their counter-parts in relational
+databases~\cite{codd}, Soup's stateful operators compute results incrementally
+by maintaining internal state between updates. This saves Soup from
+re-doing potentially expensive computations, by instead mutating the previous
+result when a new record arrives.
+
+The \textit{count} operator---produced by a SQL \code{COUNT}-clause---is an
+example of a stateful operator, where \code{Positive} and \code{Negative}
+records incur an addition or subtraction of the current count, respectively.
+Another example is the \textit{top-k} operator, perhaps produced by an
+\code{ORDER BY}-clause coupled with a \code{LIMIT} to determine the $ k $
+most significant or insignificant elements.
+
+\begin{figure}[H]
+  \centering
+  \includesvg[width=0.3\textwidth]{max}
+  \caption{\
+    The \textit{max} operator emits both a negative and a positive record when
+    its state changes: the former to signal that its previous state should be
+    invalidated, the latter to inform downstream nodes of the new result.
+  }
+\end{figure}
+
+\subsubsection{Joins}
+
+Finally, Soup supports joining together multiple paths of the data-flow graph.
+This is made possible using \textit{ancestor queries}. Whenever a record arrives
+at a join operator, it queries its other ancestors for the records required to
+produce a single, unified update. To make sure that this is completed in an
+efficient manner, join operators force their ancestors to retain indices on the
+fields that they need to be queried for.
+
+\begin{figure}[H]
+  \centering
+  \includesvg[width=0.7\textwidth]{join}
+  \caption{\
+    An ancestor query is performed to the right side of the join to produce a
+    unified record for the update received from the left.
+  }
+\end{figure}
+
 \subsection{Eventual consistency}
 
 Databases are often considered the source of truth for applications, and
