@@ -276,6 +276,68 @@ Reads access double-buffered hash tables directly~\cite{evmap}, without the need
 for locks. Writes update one of the buffers, and expose updated content to the
 readers with an atomic swap.
 
+\subsection{Interacting with Soup}
+
+Applications using Soup define a base table schema and a set of corresponding
+queries. The query syntax resembles that of prepared statements in relational
+databases, where placeholders are replaced with values when the query is used in
+a read operation. Both the schema and the queries can be modified and extended
+later on, through Soup's external API.\@
+
+\begin{listing}[H]
+  \begin{minted}[frame=lines]{sql}
+/* Base table schemas: */
+CREATE TABLE Article (aid int, title varchar(255),
+                     url text, PRIMARY KEY(aid));
+CREATE TABLE Vote (aid int, uid int);
+
+/* Intermediate view (not exposed through the client): */
+VoteCount: SELECT Vote.aid, COUNT(uid) AS votes
+            FROM Vote GROUP BY Vote.aid;
+
+/* Read query: */
+QUERY ArticleWithVoteCount:
+            SELECT Article.aid, title, url, VoteCount.votes AS votes
+            FROM Article, VoteCount
+            WHERE Article.aid = VoteCount.aid AND Article.aid = ?;
+  \end{minted}
+  \caption{Soup schema with two base tables and an external query.}\label{lst:soup-schema}
+\end{listing}
+
+Writing to and reading from Soup is done through mutators and getters. Both are
+built by going through the controller, after which writes can go directly to the
+domain and reads can access readers directly.
+
+\begin{listing}[H]
+  \begin{minted}[frame=lines]{rust}
+// Build mutators and getter.
+let mut article = blender.get_mutator("Article").unwrap();
+let mut vote = blender.get_mutator("Vote").unwrap();
+let mut awvc = blender.get_getter("ArticleWithVoteCount").unwrap();
+
+// Insert a new article:
+let aid = 1;
+let title = "new article";
+let url = "https://ntnu.edu";
+article
+  .put(vec![aid.into(), title.into(), url.into()])
+  .unwrap();
+
+// Vote for the article:
+let uid = 123;
+vote
+  .put(vec![aid.into(), uid.into()])
+  .unwrap();
+
+// Read the vote count:
+println!("{}", awvc.lookup(&[aid.into()], true));
+  \end{minted}
+
+  \caption{Soup example usage, where an article and a vote is inserted,
+  followed by a read of the vote count.}\label{lst:soup-api}
+\end{listing}
+
+
 \subsection{MySQL Shim}
 
 Soup supports a decent subset of SQL in its query definitions. Regardless, using
