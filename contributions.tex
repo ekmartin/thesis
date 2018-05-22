@@ -1,1 +1,95 @@
 \chapter{Contributions}\label{chap:contributions}
+
+\section{\code{distributary}}
+
+\begin{table}[H]
+  \begin{tabular}{l l}
+    \toprule
+    \textbf{Title} & \textbf{Pull Request}  \\ \midrule
+    RocksDB Persistence & \url{https://git.io/vhf7w} (\#72) \\ \midrule
+    SQLite Base Node Indices &
+    \url{https://git.io/vhf7B} (\#58) \\ \midrule
+    Initial Snapshotting Implementation & \url{https://git.io/vhf79} (\#54) \\ \midrule
+    Recovery & \url{https://git.io/vhfbI} (\#37) \\ \midrule
+    Arithmetic Expressions in Projections & \url{https://git.io/vhf7F} (\#35) \\ \midrule
+    \code{AUTO\_INCREMENT} support & \url{https://git.io/vhf7b} (\#66) \\ \midrule
+    Refactor \code{LookupResult} & \url{https://git.io/vhf5f} (\#76) \\ \midrule
+    Remove generics from \code{State} & \url{https://git.io/vhf5k} (\#64) \\
+    \midrule
+    Materialization status in \code{graphviz} & \url{https://git.io/vhf5L}
+    (\#51) \\ \midrule
+    Use appropriate names for \\ literals and arithmetic expressions &
+    \url{https://git.io/vhf5m} (\#45) \\ \midrule
+    Add tests for \code{Extremum::MIN} & \url{https://git.io/vhf5G} (\#33) \\
+    \bottomrule
+  \end{tabular}
+
+  \caption{Selected contributions to the Rust prototype implementation of Soup,
+  distributary.}
+\end{table}
+
+\section{\code{distributary-mysql}}
+
+\begin{table}[H]
+  \begin{tabular}{l l}
+    \toprule
+    \textbf{Title} & \textbf{Pull Request}  \\ \midrule
+    \code{UPDATE} and \code{DELETE} support & \url{https://git.io/vhfdi} (\#12) \\
+    \bottomrule
+  \end{tabular}
+
+  \caption{Selected contributions to the MySQL shim described in
+  section~\ref{sec:mysql-shim}.}
+\end{table}
+
+\section{\code{nom-sql}}
+
+\begin{table}[H]
+  \begin{tabular}{l l}
+    \toprule
+    \textbf{Title} & \textbf{Pull Request}  \\ \midrule
+    Add aliases to arithmetic expression & \url{https://git.io/vhf5D} (\#8) \\ \midrule
+    Upgrade \code{nom} & \url{https://git.io/vhfdv} (\#13) \\ \midrule
+    Move alias up to \code{FieldExpression} & \url{https://git.io/vhf5h} (\#15) \\ \midrule
+    Attach the table name to keys \\ and columns in \code{CreateTableStatement} &
+    \url{https://git.io/vhfdZ} (\#16) \\ \midrule
+    Implement \code{fmt::Display} \\ for \code{ArithmeticExpression} & \url{https://git.io/vhf5F} (\#12) \\
+    \bottomrule
+  \end{tabular}
+
+  \caption{Selected contributions to nom-sql, a Rust SQL parser.}
+\end{table}
+
+\section{\code{RocksDB}}
+
+\begin{table}[H]
+  \begin{tabular}{l l}
+    \toprule
+    \textbf{Title} & \textbf{Pull Request}  \\ \midrule
+    Add manual WAL flushing to the C API & \url{https://git.io/vhfb8} (\#3792) \\
+    \bottomrule
+  \end{tabular}
+
+  \caption{Selected contributions to RocksDB, Facebook's key-value storage system.}
+\end{table}
+
+\section{\code{rust-rocksdb}}
+
+\begin{table}[H]
+  \begin{tabular}{l l}
+    \toprule
+    \textbf{Title} & \textbf{Pull Request}  \\ \midrule
+    Add support for customizing \\ the memtable factory & \url{https://git.io/vhfAV} (\#180) \\ \midrule
+    Support linking to other \\ compression libraries & \url{https://git.io/vhfAg} (\#185) \\ \midrule
+    Add \code{set\_memtable\_prefix\_ratio} & \url{https://git.io/vhfAE} (\#181) \\ \midrule
+    Make sure DB is dropped after all tests & \url{https://git.io/vhfAB} (\#183) \\ \midrule
+    Add \code{index\_type} customization \\ to \code{BlockBasedOptions} & \url{https://git.io/vhfAl}
+    (\#184) \\ \midrule
+    Add \code{DBOptions.set\_wal\_dir} & \url{https://git.io/vhfN8} (\#186) \\
+    \midrule
+    Add \code{disable\_cache} method \\ to \code{BlockBasedOptions} & \url{https://git.io/vhfNC} (\#188) \\
+    \bottomrule
+  \end{tabular}
+
+  \caption{Selected contributions to rust-rocksdb, a Rust wrapper for RocksDB.}
+\end{table}
