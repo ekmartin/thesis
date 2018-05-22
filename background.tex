@@ -157,8 +157,37 @@ evicting the least-recently used records.
 
 \subsection{Eventual consistency}
 
-Soup maintains decent write performance through eventual consistency.
-\todo{}
+Databases are often considered the source of truth for applications, and
+anomalies here could have disastrous consequences. Whereas fatal failures are
+easy to recognize, unexpected behavior at the data layer could be the exact
+opposite. This is a convincing argument for strong consistency, where the result
+of all operations can be reasoned about from the ordering and type of operation
+performed.
+
+Regardless, companies scaling web applications to large amounts of users often
+opt for systems with lesser consistency guarantees~\cite{dynamo, pnuts, werner}.
+While the performance of strongly consistent systems have taken a turn for the
+better with the introduction of horizontally systems with clearly defined
+consistency guarantees~\cite{spanner, cockroach}, the race is still far from
+even when compared to systems with lesser consistency guarantees. At the same
+time, the question of whether strong consistency is actually a requirement for
+most applications remain. Analysis of live requests at
+Facebook~\cite{existential} showed the opposite: only 0.0004\% of reads would
+have returned different results in a strongly consistent system with total
+ordering. These cases could then be handled explicitly, avoiding the need to
+penalize the performance of the entire system for a fraction of the requests.
+
+Soup targets applications where eventual consistency is sufficient, and would
+not be able to provide the performance it does without it. Eventual consistency
+avoids the need for explicit synchronization on every update, while allowing
+Soup to scale in a distributed fashion without a total ordering of writes.
+Clients receive write acknowledgments for writes when the update has been safely
+persisted to durable storage, after which it propagates through Soup's data-flow
+graph asynchronously.
+
+Reads access double-buffered hash tables directly~\cite{evmap}, without the need
+for locks. Writes update one of the buffers, and expose updated content to the
+readers with an atomic swap.
 
 \subsection{MySQL Shim}
 
