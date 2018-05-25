@@ -159,3 +159,50 @@ at all when recovering. Restoring \code{PersistentState} to the correct state is
 left to RocksDB, which puts a cap on recovery time by ensuring that its
 write-ahead logs never grow beyond a given size. Recovering the actual database
 files, the SS-tables, is ``free''---no data needs to be read into memory.
+
+\subsection{Compressing Snapshots}
+
+\todo{re-run benchmarks with compression}
+
+\subsection{Write-performance with Snapshotting}
+
+Snapshotting is a significant improvement to Soup's recovery situation, and a
+step in the right direction for Soup as a production-ready system. Regardless,
+it is only useful if Soup manages to maintain much of the same write-throughput
+while performing regular snapshots.
+
+To measure the performance penalty of snapshotting, we make use of the vote
+benchmark described in section~\ref{sec:vote} and earlier in this chapter. The
+benchmark compares the batch write latency at increasing throughput targets,
+first without snapshotting and then with. The benchmark runs for 60 seconds,
+performing a snapshot every 10 seconds.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{graphs/write-snapshot-batch}
+  \caption{\
+    Write-latency comparison with and without snapshotting (with a snapshot
+    timeout of 10 seconds). Both use Soup's regular write-ahead log.
+  }\label{fig:graph-snapshot}
+\end{figure}
+
+Most of the snapshotting work is performed in standalone snapshot workers,
+running in threads separate from Soup's packet processing. Without this, the
+throughput penalty would without doubt be much more significant than the 10\%
+observed in figure~\ref{fig:graph-snapshot}. The penalty is a result of the full
+state clone incurred at each materialized node during a snapshot.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{graphs/write-snapshot-100-batch}
+  \caption{\
+    100th percentile comparison, with and without snapshotting.
+  }\label{fig:graph-snapshot-100}
+\end{figure}
+
+The first snapshot graph shows no increase in latency. With a snapshot timeout
+of 10 seconds and a benchmark runtime of 60 seconds, snapshot occurrences are
+probably too rare for it to show up in the 95th percentile. Looking at the 100th
+percentile on the other hand, we can see the latency spiking at a lower
+throughput than normal. At this point the state size is reasonably large,
+resulting in non-trivial clone operations.
