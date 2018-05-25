@@ -1,1 +1,43 @@
 \chapter{Future Work}\label{chap:future-work}
+
+\subsection{Snapshotting and Persistent Bases}
+
+The \code{PersistentState} implementation described
+in~\ref{chap:persistent-bases} removes the regular Soup write-ahead log in favor
+of relying on RocksDB for durability. RocksDB maintains its own WAL,
+which---unlike Soup's---is discarded when its updates are safely flushed to
+durable storage. This is far better for recovery purposes, as it avoids the need
+to go through a seemingly endless stream of updates to restore Soup back to a
+pre-failure state. It does, on the other hand, complicate matters for
+snapshotting.
+
+Snapshotting relies on Soup's write-ahead log to recover updates that occur
+after a snapshot is taken, prior to a failure. During recovery, the latest
+snapshot is first restored, followed by log-based recovery for any remaining log
+entries. Together they make sure that Soup recovers quickly, without degrading
+its durability guarantees. With persistent bases the write-ahead log is
+maintained internally by RocksDB, together with the decision of when to
+eventually discard prior log files. Without the ability to replay log entries,
+recovering using snapshotting would leave all other nodes than the base nodes in
+an older state than before the crash.
+
+Recovery using persistent bases leaves the partial nodes further down the graph
+empty. This works fine because of Soup's replay system: any missing reads will
+propagate all the way to the base nodes, resulting in the partial nodes
+eventually reaching a similar state to the one they were in prior to crashing.
+With snapshotting, the partial nodes would end up in an \textit{old} state,
+instead of empty. This would prevent Soup from issuing base node replays,
+effectively discarding the updates that happened after the last snapshot was
+taken.
+
+That leaves the question of how to replay any updates that happened after the
+last snapshot was taken, while still relying on RocksDB's write-ahead log for
+persistence. The first step would be to ensure that RocksDB never discards WAL
+files until all its updates are included in a snapshot. Secondly, Soup's
+recovery procedure would need to retrieve updates that happened after the last
+snapshot was taken, directly from the RocksDB write-ahead logs. By including the
+current snapshot identifier in all persisted updates, the recovery process would
+be able to discern between updates that happened before and after the last
+persisted snapshot.
+
+
