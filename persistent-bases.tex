@@ -1387,3 +1387,24 @@ know how to differentiate a partially built index from a complete one. During
 recovery we can then check whether the index count corresponds to the column
 family count, and if it does not, simply drop the entire column family and
 rebuild the index again later.
+
+\subsection{Background Threads}
+
+With the exception of its write-ahead log, RocksDB first buffers writes to an
+in-memory MemTable before persisting data to durable storage. This comes with
+performance benefits, by avoiding the latency penalty that often comes from
+writing to disk. MemTables have to be flushed to durable storage at some point
+however, which is handled by \textit{background threads}. These are also
+responsible for compacting on-disk SS-tables (see
+section~\ref{sec:compactions}).
+
+RocksDB's background threads are shared across RocksDB instances within the same
+process. This is helpful for Soup, where a single Soup instance might contain a
+multitude of sharded base nodes, leading to a core-constrained system if all
+nodes were given a background thread each. RocksDB divides its background
+threads into two priority partitions, where \code{HIGH} is reserved for flushing
+memtables and \code{LOW} is assigned for compactions. The amount of threads in
+both is configurable, with different hardware and varying workloads requiring
+different thread numbers. Soup---like RocksDB---defaults to a single background
+thread per process, with a recommendation of increasing it left to its
+end-users.
