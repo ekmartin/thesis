@@ -2,30 +2,14 @@
 
 \section{Soup}
 
-Building sophisticated web applications while scaling to potentially millions of
-users forces developers to compromise between performance, user requirements,
-and application complexity. Whereas traditional relational databases logically
-are able to fulfill the increasingly complex storage demands of today's internet
-businesses, they are far from able to do so at the scale and performance
-required. To continue serving requests at increasing throughputs with low
-latencies, developers introduce mitigation strategies ranging from complex cache
-hierarchies~\cite{memcached} to denormalized schemas~\cite{denormalization}.
+Soup~\cite{xylem} is an on-going research project at the Parallel and Distributed Operating
+Systems\furl{https://pdos.csail.mit.edu/} group at MIT CSAIL.\@ The current Soup
+prototype is written in the Rust programming language and made available as
+open-source code on GitHub\furl{https://github.com/mit-pdos/distributary/}.
 
-These methods are usually used to drastically improve read performance, while
-penalizing write throughput and increasing application complexity. Soup sets out
-to solve this dilemma once and for all, with a structured storage system capable
-of horizontally scaling to millions of reads per second, without the need for
-complex cache deployments or manual maintenance of materialized views.
+This section introduces Soup's core concepts.
 
 \subsection{Data-flow}
-
-Soup achieves this through use of an incrementally maintained data-flow graph.
-New updates propagate through the graph at write-time, with pre-computed results
-stored at selected \textit{materialized} nodes throughout the graph. This
-moves the bulk of the workload from reads to writes, by allowing read operations
-to directly access computed state from materialized nodes further down the
-graph.
-
 \todo{figure that compares a traditional query graph to soup's data-flow}
 
 Applications using Soup define base table schemas and a set of queries ahead of

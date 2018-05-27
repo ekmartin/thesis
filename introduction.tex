@@ -1,2 +1,102 @@
 \chapter{Introduction}
 
+Building sophisticated web applications while scaling to potentially millions of
+users forces developers to compromise between performance, user requirements,
+and application complexity. Whereas traditional relational databases logically
+are able to fulfill the increasingly complex storage demands of today's internet
+businesses, they are far from able to do so at the scale and performance
+required. To continue serving requests at increasing throughputs with low
+latencies, developers introduce mitigation strategies ranging from complex cache
+hierarchies~\cite{memcached} to denormalized schemas~\cite{denormalization}.
+
+These methods are usually used to drastically improve read performance, while
+penalizing write throughput and increasing application complexity.
+Soup~\cite{xylem} sets out to solve this dilemma once and for all, with a
+structured storage system capable of horizontally scaling to millions of reads
+per second, without the need for complex cache deployments or manual maintenance
+of materialized views.
+
+Soup achieves this through use of an incrementally maintained data-flow graph.
+New updates propagate through the graph at write-time, with pre-computed results
+stored at selected \textit{materialized} nodes throughout the graph. This
+moves the bulk of the workload from reads to writes, by allowing read operations
+to directly access computed state from materialized nodes further down the
+graph.
+
+Soup ensures durability by persisting all updates to a write-ahead log before
+they are injected into the data-flow graph. While appending entries to a file is
+good for performance, recovering from an ever-growing log after a failure is far
+from feasible. This thesis improves Soup's durability situation with two main
+contributions: it moves Soup's otherwise in-memory table structures to durable
+storage, and implements snapshotting of Soup's materialized views.
+
+\section{From main-memory to durable storage}
+
+After updates are persisted to Soup's write-ahead log, they are injected into
+the first nodes in the data-flow graph: the base tables. Unlike the partially
+materialized nodes further down the data-flow graph, the base tables can never
+be evicted from, and must together always contain a full representation of a
+Soup application's state. On the other hand, the base tables should only be
+responsible for serving a small part of Soup's read queries. The rest should be
+handled by materialized nodes towards the bottom of the graph, using state that
+was pre-computed when the updates propagated through the data-flow graph.
+
+This makes volatile main-memory a poor destination for Soup's base table data.
+Applications where data is continuously inserted would cause Soup's memory
+footprint to grow continuously over time, until eventually reaching its host
+system's memory limit. Moving the base tables to durable storage avoids this
+problem, while reducing Soup's overall memory usage.
+
+Storing base tables on durable storage also improves Soup's recovery situation,
+by avoiding the need to replay the entire write-ahead log after failures. With
+all updates safely persisted and readily available from durable storage,
+recovery is instead a matter of replaying data from the base tables when needed.
+
+\section{Snapshotting materialized views}
+
+With durable base tables, Soup recovers significantly faster than by having to
+replay the entire write-ahead log. This is not without downside however: whereas
+log-based recovery brings \textit{all} nodes in the data-flow graph back to a
+pre-failure state, durable base tables leave partial nodes empty, resulting in a
+latency penalty for initial read-queries. Instead, we would like to periodically
+write \textit{snapshots} of the materialized state at each node to durable
+storage, ensuring a speedy recovery process for both base tables and
+materialized views alike.
+
+To snapshot nodes individually while maintaining consistency, it is crucial that
+all nodes snapshot the same window of updates. For a given update at any given
+time, said update must either be contained in every snapshot across the graph,
+or neither of them. While updates are processed synchronously within a single
+domain in Soup (a partition of nodes), data flows asynchronously between
+domains, where the boundaries can be both within a local machine and across a
+network. At the same time, taking a snapshot should not incur a significant
+pause in processing, which would result in lower throughput all around.
+
+By approaching the problem from the viewpoint of snapshotting in a distributed
+system, this thesis implements a snapshotting method capable of creating a
+logically consistent snapshot across the data-flow graph, with a focus on
+maintaining as much of Soup's performance guarantees as possible.
+
+\section{Outline}
+
+The rest of this thesis is structured as follows:
+
+\begin{itemize}
+  \item \textbf{Chapter~\ref{chap:background}} introduces core theory behind fundamental
+  concepts used in the rest of this thesis.
+  \item \textbf{Chapter~\ref{chap:related-work}} reviews ideas from research and
+  industry relevant to the thesis' main contributions.
+  \item \textbf{Chapter~\ref{chap:benchmarks}} describes new and existing
+  benchmarks used throughout the thesis.
+  \item \textbf{Chapter~\ref{chap:persistent-bases}} outlines the requirements
+  for a persistent base table implementation, followed by two implementation
+  iterations.
+  \item \textbf{Chapter~\ref{chap:recovery}} gradually builds up a snapshotting
+  implementation.
+  \item \textbf{Chapter~\ref{chap:evaluation}} evaluates the resulting
+  implementations from the two previous chapters, using the benchmarks
+  introduced in chapter~\ref{chap:benchmarks}.
+  \item \textbf{Chapter~\ref{chap:future-work}} presents possible next steps
+  towards a production-ready and durable Soup.
+  \item \textbf{Chapter~\ref{chap:conclusion}} TODO
+\end{itemize}

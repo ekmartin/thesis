@@ -40,4 +40,38 @@ current snapshot identifier in all persisted updates, the recovery process would
 be able to discern between updates that happened before and after the last
 persisted snapshot.
 
+\subsection{\code{PersistentState} serialization}
 
+Both the keys and values persisted to RocksDB are serialized using
+bincode (see section~\ref{sec:bincode}). While bincode performs well
+compared to other serialization libraries,
+
+\subsection{Uncoordinated snapshots}
+
+Coordinating a global snapshot across the entire data-flow graph requires
+unnecessary communication between the workers and the controller. Instead, the
+question of finding the last valid snapshot could be left to the recovery
+process, \eg by finding $ Min(epoch) $ across the nodes, or by following schemes
+such as~\cite{falkirk}.
+
+\subsection{Incremental snapshots}
+
+The write-performance benchmark in section~\ref{sec:snapshot-write} showed a
+10\% decrease in overall write throughput after introducing snapshotting. The
+majority of the work is performed in separate snapshotting threads, leaving the
+state clone operation as the culprit. To avoid cloning altogether, snapshots
+would need to be maintained gradually, which could be achieved by maintaining a
+buffer of changes between snapshots, which could then be forwarded to the
+snapshotting worker and applied there. While this would avoid the need to clone
+the entire state, snapshot workers would now need to keep an entirely duplicate
+clone of the snapshot state in memory, effectively doubling Soup's memory usage.
+
+Instead, snapshots could be maintained incrementally directly on durable
+storage. This could make use of the same \code{PersistentState} implementation
+used by persistent base nodes, either by having the snapshotting workers apply
+received updates to RocksDB, or by doing so directly from each domain. This
+would significantly reduce the write-amplification required to persist a
+snapshot, by avoiding the need to write duplicate data to disk again and again.
+By doing so, it would also minimize the risk of filling up the snapshot workers'
+queues, which could now happen if the time it takes to serialize and persist a
+single, possibly large, snapshot grows beyond the predefined snapshot interval.
