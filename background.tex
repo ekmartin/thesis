@@ -1,5 +1,16 @@
 \chapter{Background}\label{chap:background}
 
+This chapter describes various concepts relevant to the rest of this thesis,
+starting with an introduction to the system this thesis makes its contributions
+to---Soup. Afterwards the Rust programming language is outlined, together with a
+look at the \code{bincode} serialization library, which is used for both
+snapshotting and persistent base tables. Following that, a few profiling
+concepts are described, used to reason about performance issues throughout the
+thesis. Finally, the two storage engines embedded in separate implementation
+iterations of persistent base tables are studied.
+
+\newpage
+
 \section{Soup}
 
 Soup~\cite{xylem} is an on-going research project at the Parallel and Distributed Operating

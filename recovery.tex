@@ -1,5 +1,12 @@
 \chapter{Recovery}\label{chap:recovery}
 
+This chapter describes the current recovery scheme used in Soup, followed by a
+look at how it improves when the base tables are stored on durable storage
+instead of in volatile main-memory. Finally, the rest of the chapter is reserved
+for snapshotting---a significant improvement to Soup's recovery capabilities.
+
+\newpage
+
 \section{Write-ahead log}
 
 Soup appends all updates to a durable write-ahead log prior to sending out write
@@ -626,4 +633,5 @@ snapshot is stored in ZooKeeper, ensuring consensus between the replicated Soup
 controllers.
 
 \subsection{Diamonds in the data-flow graph}
+
 \todo{}
