@@ -1,6 +1,25 @@
 \chapter{Conclusion}\label{chap:conclusion}
 
-\section{Conclusion}
+\section{Persistent bases}
+
+Storing Soup's base tables on durable storage instead of in-memory lets Soup
+handle continuously increasing quantities of data without having its
+memory-usage grow without bounds. With base tables safely stored on durable
+storage, Soup no longer needs to replay all previous updates to recover after a
+failure. Read operations instead replay data from the base tables when needed,
+eventually bringing Soup's partially materialized views back to a similar state
+they were in prior to the failure.
+
+The persistent base table implementation contributed throughout this replaces
+Soup's in-memory index structure with a durable index structure built on top of
+RocksDB---a battle-tested key-value storage layer developed at Facebook.
+Compared to Soup's previous ever-growing write-ahead log, the RocksDB-based
+implementation decreases the raw write-throughput with about 10\%, while
+providing significant benefits both for recovery and memory-usage. The
+implementation is currently used by the latest Soup prototype.
+
+\section{Snapshotting}
+
 
 \section{Future work}\label{sec:future-work}
 
