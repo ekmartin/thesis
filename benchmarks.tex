@@ -8,14 +8,14 @@ the features developed in this thesis have on Soup.
 
 \section{Hardware}
 
-\subsection{Server Setup 1: Local SSD}
+\subsection{Server setup 1: SSD}
 
 Unless otherwise specified, benchmarks are run on Dell PowerEdge R430 server
 with two Intel Xeon E5-2660 v3 CPUs and a total of 20 physical and 40 logical
 cores. The server has 64GB of DDR4 RAM running at a speed of 2200MHz, with two
 solid-state drives: a Samsung SSD 850 PRO and an Intel SSD S3710.
 
-\subsection{Server Setup 2: EC2 NVMe SSD}
+\subsection{Server setup 2: EC2 NVMe SSD}
 
 Some of the benchmarks require the workload generator and clients to be
 separated on a different machine than Soup itself. For these cases the
@@ -30,7 +30,7 @@ for the clients and an \code{i3.4xlarge} is used for the Soup workers. The
 and 160 GB of RAM.\@ The \code{i3.4xlarge} uses the same CPU as the \code{m4},
 but is backed by NVMe SSDs capable of extremely high throughput I/O.
 
-\subsection{Server Setup 3: EC2 RAM Disk}
+\subsection{Server setup 3: EC2 RAM Disk}
 
 Similar to the setup in the previous section, the third setup makes use of two
 servers hosted on Amazon EC2---this time without fast durable storage. Instead,

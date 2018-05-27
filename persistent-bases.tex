@@ -1,4 +1,4 @@
-\chapter{Persistent Base Nodes}\label{chap:persistent-bases}
+\chapter{Persistent base nodes}\label{chap:persistent-bases}
 
 Updates begin their journey through the Soup data-flow graph at the base nodes,
 after being successfully persisted to Soup's write-ahead log
@@ -42,7 +42,7 @@ nodes would achieve the following goals:
   \item Reduce recovery time after failures
 \end{enumerate}
 
-\section{In-Memory State}\label{sec:in-memory-state}
+\section{In-memory state}\label{sec:in-memory-state}
 The current in-memory state implementation provides a key-value API with support
 for multiple indices. A separate state data structure is kept for each
 materialized node, including base nodes. The same data structure is used by both
@@ -184,7 +184,7 @@ making use of existing database systems to test performance assumptions, which
 is exactly what this thesis will do: first using SQLite, and later using
 RocksDB.\@
 
-\subsection{State Interface}\label{sec:trait}
+\subsection{State interface}\label{sec:trait}
 Before diving into the individual \code{State} operations, we need to pave the
 way for the possibility of even having two different state implementations: the
 existing in-memory implementation, and the new persistent storage variant, from
@@ -372,7 +372,7 @@ if let Some(row) = rows.into_iter().next() {
 \todo{write about IntoIterator and how it yields cows.} \\
 \todo{include a more formal specification of how this works?}
 
-\section{Persistent State with SQLite}
+\section{Persistent state with SQLite}
 The first iteration towards a durable state implementation uses SQLite as its
 storage engine. Described in section~\ref{sec:sqlite}, SQLite is a well-tested,
 heavily used system with a track record in everything from applications to other
@@ -685,7 +685,7 @@ needed to support a wide range of features, and an even wider array of systems,
 profiling clearly shows that the bulk of processing time is spent interacting
 with durable storage as a result of B-tree maintenance.
 
-\section{Persistent State with RocksDB}
+\section{Persistent state with RocksDB}
 
 How do we improve upon SQLite's low write throughput? One option would be to
 only write to durable storage from background threads, avoiding the hit in
@@ -708,7 +708,7 @@ update Soup sees needs to be persisted to durable storage, whereas only a subset
 of reads need to access \code{PersistentState} at all---most results should be
 served by partial nodes further down the data-flow graph.
 
-\subsection{Secondary Index Scheme}
+\subsection{Secondary index scheme}
 
 Whereas SQLite includes support for a large subset of SQL features, RocksDB's
 API is on a lower abstraction level. Limited to the functions necessary to

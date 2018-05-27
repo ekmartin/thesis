@@ -365,7 +365,7 @@ TCP/IP.\@ Received queries extend the Soup data-flow graph if needed, before
 executing the query by forwarding it to an appropriate Soup worker.
 
 \section{Rust}
-\subsection{Foreign Function Interface}
+\subsection{Foreign Function Interface} % TODO: "Calling C-programs from Rust"?
 
 \section{Recovery}
 
@@ -540,7 +540,7 @@ on-disk data structure, with pointers from the leaf nodes, and by introducing
 sibling pointers at the leaf node level, range queries can be efficiently
 executed by walking the bottom of the tree horizontally.
 
-\subsection{Rollback Journal}\label{sec:sqlite-locks}
+\subsection{Rollback journal}\label{sec:sqlite-locks}
 SQLite implements support for atomic transactions through the use of a rollback
 journal. A historic copy of values prior to changes are kept in a separate
 file---the rollback journal---so that they can be copied back to the actual
@@ -555,7 +555,7 @@ concurrent access to their database (\eg web applications backends with multiple
 active users): only a single write operation could be performed at the time.
 This is not the case with reads, which hold shared locks.
 
-\subsection{Write-ahead Log}\label{sec:sqlite-wal}
+\subsection{Write-ahead log}\label{sec:sqlite-wal}
 In version 3.7.0, SQLite introduced an alternative to the traditional rollback
 journal: the write-ahead log~\cite{sqlite-wal}. Maintaining the same atomicity
 and durability guarantees, the use of a WAL significantly improves write
@@ -682,14 +682,14 @@ bound on inserts, searches and deletes. This can be changed to a series of hash
 based implementations, which offer better performance if all operations are done
 within a pre-specified key prefix.
 
-\subsection{Static Sorted Tables}
+\subsection{Static sorted tables}
 After a memtable reaches a certain size, RocksDB's background threads takes over
 and flushes it to persistent storage. This will generate one or more SS-tables
 on disk, where each file is sorted. SS-tables are immutable: a new SS-table is
 always created, and existing ones are never updated. This ensures that writes
 remain sequential.
 
-\subsection{Write-ahead Log}\label{sec:rocksdb-wal}
+\subsection{Write-ahead log}\label{sec:rocksdb-wal}
 RocksDB achieves durability through the use of a write-ahead log (WAL). Without
 it, data in memtables would be lost at the event of a crash. By default, every
 \code{Put} operation results in a write to the RocksDB WAL, with the optional
@@ -730,7 +730,7 @@ listing~\ref{lst:write-batch}), to amortize the cost of synchronizing the WAL
 over a larger amount of write operations. This is an atomic operation: either
 all the writes in the write batch succeeds, or none do.
 
-\subsection{Basic Operations}
+\subsection{Basic operations}
 Akin to other key-value databases, RocksDB offers a familiar API of
 \code{Put(key, value)}, \code{Get(key)} and \code{Delete(key)}, operating
 directly on bytestream values. Both insertions and deletions are purely
@@ -842,7 +842,7 @@ changed between through \textit{factories}. Different implementations have
 different advantages and disadvantages, with the default being the all around
 safest choice.
 
-\subsubsection{Skip List}
+\subsubsection{Skip list}
 
 The default implementation uses a \textit{skip list}, a data structure with
 comparable performance guarantees to a binary search tree---$ O(\log n) $ for
@@ -852,7 +852,7 @@ factory capable of concurrent insertions. Flushing a skip list MemTable to disk
 is also considerably faster compared to the other factories, with a much lower
 memory overhead.
 
-\subsubsection{Hash Skip List}
+\subsubsection{Hash skip list}
 
 RocksDB provides two hash based MemTable factories, where keys are organized in
 buckets based on their extracted \textit{prefix}. This implies that the hash
@@ -862,7 +862,7 @@ same time the hash based implementations are also considerably more efficient
 when that is the case, providing $ O(\log k) $ performance, where $ k $ is the
 number of keys within a specific prefix (which is often quite low).
 
-\subsubsection{Hash Linked List}
+\subsubsection{Hash linked list}
 
 Similar to the skip list based hash table, RocksDB also provides a hash based
 implementation where each bucket is maintained as a linked list instead of a
