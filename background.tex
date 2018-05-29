@@ -895,13 +895,24 @@ useful for bulk loading data as fast as possible.
 \subsection{Customizing the SS-table implementation}
 
 The default SS-table implementation is based on the original format from
-LevelDB, \code{BlockBasedTable}. As the name implies, data is stored in separate
-blocks, where each file's initial block is a filter on the rest of the contents.
-
-\todo{write more here}
+LevelDB,
+\code{BlockBasedTable}\furl{https://github.com/facebook/rocksdb/wiki/Rocksdb-BlockBasedTable-Format}.
+As the name implies, data is stored in separate blocks, where each file's
+initial block is a filter on the rest of the contents. The size of a single
+block is usually fixed and can be configured by the application. Read operations
+always read an entire block into memory, before searching for a specific record.
+Previously read blocks are maintained in an in-memory cache---a block cache.
 
 RocksDB also provides an improved format designed for low query latency on
-modern storage media, \code{PlainTable}.
+modern storage media,
+\code{PlainTable}\furl{https://github.com/facebook/rocksdb/wiki/PlainTable-Format}.
+The format was initially developed for in-memory databases, but performs well on
+other high performance mediums as well. Unlike \code{BlockBasedTable},
+\code{PlainTable} addresses records by row, and uses a hash based in-memory
+index for efficient reads. Similar to the hash based MemTable formats described
+in section~\ref{sec:memtable-impl}, it uses \textit{prefix extraction} to place
+keys into separate buckets. This also limits seek-based iteration to a single
+prefix.
 
 \subsection{RocksDB from Rust}\label{sec:rust-rocksdb}
 While RocksDB is written in C++ it provides a separate API through its
