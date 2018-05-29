@@ -47,6 +47,9 @@ however, and benchmarking the horizontal scalability makes little sense.
 Instead, we will use the \textit{local} \code{vote} benchmark, where both the
 clients and the Soup workers run on the same machine.
 
+The benchmark is run on the server described in section~\ref{sec:server-1}, with
+the write-ahead log written to one SSD and the database files to another.
+
 \begin{figure}[H]
   \centering
   \includegraphics[width=\textwidth]{graphs/write-batch}
@@ -73,7 +76,42 @@ especially considering serialization. Whereas the Soup log only needed to
 serialize the update once, \code{PersistentState} needs to do so, in-part, once
 for each index.
 
-\todo{show a graph comparing memtable implementation speed?}
+\subsection{MemTable format}
+
+All writes to RocksDB are first placed in an in-memory buffer---a MemTable.
+RocksDB includes multiple MemTable implementations, and the advantages and
+disadvantages of the different data structures are described in
+section~\ref{sec:memtable-impl}. To measure the impact of changing the MemTable
+implementation, the same vote benchmark used in the previous sections is used,
+with the same hardware.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{graphs/memtable}
+  \caption{\
+    Write-latency measured at different throughput targets using the \code{vote}
+    benchmark, while comparing separate RocksDB MemTable implementations.
+  }\label{fig:graph-memtable}
+\end{figure}
+
+Changing from the default skip list implementation results in a significant
+increase in write-throughput. In reality, this is a comparison of the $ O(\log
+n) $ performance guarantees of a skip list and the closer to constant time
+guarantees of the hash based implementations. RocksDB buckets keys based on the
+their prefix, where the two hash based implementations use different data
+structures to organize each bucket. Using a skip list for the buckets result in
+$ O(\log p) $ insertions, where $ p $ is the amount of keys within a single
+prefix. Linked list buckets improves this even further, with constant time
+insertions and lower memory overhead.
+
+While the write performance of the link list hash table is better than the skip
+list one, its read performance is worse. The former requires a linear search to
+find values, while the latter can do the same in logarithmic time. Fortunately,
+RocksDB turns link list buckets into skip lists when they go beyond a certain
+amount of keys---by default 256. In the \code{vote} benchmark this will likely
+happen for the \code{Vote} base table, which will have a large index on
+\code{article\_id}, but not for the \code{Article} table where each prefix maps
+to a single key, a unique article.
 
 \section{Read-performance}
 
@@ -88,6 +126,9 @@ read at most once, resulting in a full replay from the base nodes.
 The database is pre-populated with 10 million rows, after which a small random
 subset of the rows are read once. With \code{PersistentState}, Soup recovers
 existing data between each test run, after flushing the disk caches.
+
+The benchmark is run on the same server as the write-throughput benchmark (see
+section~\ref{sec:server-1}).
 
 \begin{figure}[H]
   \centering

@@ -10,14 +10,14 @@ the features developed in this thesis have on Soup.
 
 \section{Hardware}
 
-\subsection{Server setup 1: SSD}
+\subsection{Server setup 1: SSD}\label{sec:server-1}
 
 Unless otherwise specified, benchmarks are run on Dell PowerEdge R430 server
 with two Intel Xeon E5-2660 v3 CPUs and a total of 20 physical and 40 logical
 cores. The server has 64GB of DDR4 RAM running at a speed of 2200MHz, with two
 solid-state drives: a Samsung SSD 850 PRO and an Intel SSD S3710.
 
-\subsection{Server setup 2: EC2 NVMe SSD}
+\subsection{Server setup 2: EC2 NVMe SSD}\label{sec:server-2}
 
 Some of the benchmarks require the workload generator and clients to be
 separated on a different machine than Soup itself. For these cases the
@@ -32,7 +32,7 @@ for the clients and an \code{i3.4xlarge} is used for the Soup workers. The
 and 160 GB of RAM.\@ The \code{i3.4xlarge} uses the same CPU as the \code{m4},
 but is backed by NVMe SSDs capable of extremely high throughput I/O.
 
-\subsection{Server setup 3: EC2 RAM Disk}
+\subsection{Server setup 3: EC2 RAM Disk}\label{sec:server-3}
 
 Similar to the setup in the previous section, the third setup makes use of two
 servers hosted on Amazon EC2---this time without fast durable storage. Instead,
@@ -40,12 +40,7 @@ an \code{m5.12xlarge} and a \code{c5.4xlarge} is used. Both make use of newer
 Intel Xeon Platinum processors, with 48 cores and 192GB RAM on the \code{m5} and
 16 cores and 32GB RAM on the \code{c5}.
 
-\section{Lobsters}
-
-\todo{In the Soup paper, the Lobsters benchmark is compared to MySQL (which it
-beats quite handily). Not sure if that is relevant for my thesis, but if it is,
-this section should be rewritten slightly to describe the different query sets
-used.}
+\section{Lobsters}\label{sec:lobsters}
 
 Lobsters\furl{http://lobste.rs/} is a news aggregation website where users post,
 vote and comment on links and discussions. Soup uses Lobsters to showcase the
@@ -70,12 +65,11 @@ Lobsters setup.
   }\label{fig:lobsters-graph}
 \end{figure}
 
-The database is seeded with the same amount of data as a real world Lobsters
-setup: 120 000 comments, 40 000 stories and 9200 users. The regular Lobsters
-queries rely on manual materializations and other optimizations to reach decent
-performance using MySQL.\@ Part of Soup's goal is to let developers write
-``natural'' queries, without caching or other denormalizing optimizations, and
-some of the Lobsters queries have been rewritten to better highlight this.
+The regular Lobsters queries rely on manual materializations and other
+optimizations to reach decent performance using MySQL.\@ Part of Soup's goal is
+to let developers write ``natural'' queries, without caching or other
+denormalizing optimizations, and some of the Lobsters queries have been
+rewritten to better highlight this.
 
 \section{Vote}\label{sec:vote}
 

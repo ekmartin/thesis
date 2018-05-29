@@ -363,7 +363,7 @@ println!("{}", awvc.lookup(&[aid.into()], true));
   followed by a read of the vote count.}\label{lst:soup-api}
 \end{listing}
 
-\subsection{MySQL Shim}\label{sec:mysql-shim}
+\subsection{MySQL Protocol Translation}\label{sec:mysql-shim}
 
 Soup supports a decent subset of SQL in its query definitions. Regardless, using
 Soup in an application requires significant changes: all queries have to be
@@ -845,7 +845,7 @@ backwards compatibility, the default API methods operate on the same column
 family, ``default'', with separate methods taking in an additional column family
 argument.
 
-\subsection{Customizing the MemTable implementation}
+\subsection{Customizing the MemTable implementation}\label{sec:memtable-impl}
 
 RocksDB provides multiple implementations of its in-memory
 MemTables\furl{https://github.com/facebook/rocksdb/wiki/MemTable}, which can be
