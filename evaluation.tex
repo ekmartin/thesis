@@ -20,7 +20,7 @@ recovery benefits from both \code{PersistentState} and snapshotting.
 
 \newpage
 
-\section{Write-performance}
+\section{Write-performance}\label{sec:write-throughput}
 
 Only a small subset of reads propagate all the way to the base nodes. Instead,
 they are served by partially materialized nodes further down the graph, avoiding
@@ -170,8 +170,8 @@ distribution modeled after the application's production traffic. Whereas the
 previous benchmarks measure queries per second, the Lobsters benchmark uses
 pages per second as its metric, where separate pages require different queries.
 A single page view can issue both read and write requests, through insertions,
-lookups, and updates. As Soup translates each update to a removal followed by an
-insertion, the benchmark also measures deletion performance. The latency
+lookups, and updates. As Soup translates updates to removals followed by
+insertions, the benchmark also measures deletion performance. The latency
 measured is the \textit{sojourn} time of each request---the time from the
 request is generated until completion (see section~\ref{sec:vote-open-loop}).
 
@@ -180,22 +180,20 @@ request is generated until completion (see section~\ref{sec:vote-open-loop}).
 The benchmark runs on two separate servers. SQL queries are issued by a workload
 generator and translated to native Soup requests using the MySQL shim layer (see
 section~\ref{sec:mysql-shim}). These requests are handled by a separate server,
-running Soup.
-
-Before initiating the benchmark, the database is pre-populated with a similar
-amount of data to the real Lobsters application: 120 000 comments, 40 000
-stories, and 9200 users. Afterwards the benchmark issues requests following a
-target throughput goal.
+running Soup. Before initiating the benchmark, the database is pre-populated
+with a similar amount of data to the real Lobsters application: 120\,000
+comments, 40\,000 stories, and 9\,200 users. Afterwards the benchmark issues
+requests following a target throughput goal.
 
 Note that unlike the write-throughput benchmark, Soup's write-ahead log is not
 used here. Instead, the benchmark compares purely in-memory---and not durable---
-Soup to Soup with its base tables stored in RocksDB.\@
+Soup to Soup with its base tables safely stored in durable RocksDB.\@
 
 \subsection{Computational overhead}
 
-The Lobsters benchmark is run on two separate hardware setups. The first, server
-setup 2 (described in section~\ref{sec:server-2}), emulates durable storage
-using a
+The Lobsters benchmark is run on two separate hardware configurations. The
+first, server setup 2 (described in section~\ref{sec:server-2}), emulates
+durable storage using a
 RAM-disk\furl{https://manpages.debian.org/stretch/initscripts/tmpfs.5.en.html}.
 This lets the benchmark focus on the computational overhead of storing Soup's
 base tables in RocksDB, while serving as a useful comparison to existing Soup
@@ -205,20 +203,40 @@ benchmarks---which make use of the same server setup.
   \includegraphics[width=\textwidth]{graphs/lobsters-ram}
   \caption{\
     The 99th percentile sojourn latency of the Lobsters benchmark measured at
-    increasing throughput targets.
+    increasing throughput. The \code{soup} target does not write any log files,
+    while the \code{rocksdb\_soup} target persists all updates to RocksDB.
   }\label{fig:lobsters-ram}
 \end{figure}
 
+Figure~\ref{fig:lobsters-ram} shows that Soup with its base tables stored in
+RocksDB performs just as well as in-memory Soup. The seemingly random
+fluctuations in latency exist for both versions, and are not a result of whether
+the tables are stored in-memory or not.
+
 \subsection{I/O overhead}
+
+To measure the overhead of having to persist updates to a durable
+write-ahead log, the same benchmark is run on an Amazon EC2 server with an NVMe
+SSD-drive\furl{https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ssd-instance-store.html}
+(server setup 2 in section~\ref{sec:server-2}). Similar to the write-throughput
+benchmark in section~\ref{sec:write-throughput}, the write-ahead log and RocksDB
+database files are written to separate disks.
 
 \begin{figure}[H]
   \includegraphics[width=\textwidth]{graphs/lobsters-nvme}
   \caption{\
-    The 99th percentile sojourn latency of the Lobsters benchmark measured at
-    increasing throughput targets.
+    99th percentile sojourn latency of the Lobsters benchmark measured at
+    increasing throughput. The \code{rocksdb\_soup} target writes to a durable
+    NVMe SSD.\@
   }\label{fig:lobsters-nvme}
 \end{figure}
 
+The observed latency is slightly higher when Soup's base tables are stored on
+durable storage, but the difference is far from significant. The server used
+here is on the other hand far slower than the one in the previous section,
+resulting in overall lower throughput targets. While durable and non-durable
+Soup are quite equal here as well, the difference would without doubt be more
+drastic on a server with slower storage media.
 
 \section{Recovery}
 
