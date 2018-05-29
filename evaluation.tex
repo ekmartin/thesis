@@ -138,12 +138,17 @@ section~\ref{sec:server-1}).
   }\label{fig:graph-replay}
 \end{figure}
 
+Reading a small amount of rows result in less cache overlap when data is read
+from durable storage, which in turn leads to higher read latency. When the
+benchmark gravitates towards higher read counts, more data is bound to be served
+from the file system cache, reducing the overall latency of most reads.
+
 \subsection{SS-table format}
 
 RocksDB provides two separate SS-table implementations, \code{BlockBasedTable}
-and \code{PlainTable}.
-
-\todo{write more!}
+and \code{PlainTable}, as described in section~\ref{sec:ss-table}. The latter
+imposes limitations that the former does not have, but promises lower read
+latency on fast storage mediums in return.
 
 \begin{figure}[H]
   \centering
@@ -154,7 +159,72 @@ and \code{PlainTable}.
   }\label{fig:graph-replay-table}
 \end{figure}
 
+Soup's persistence base tables rely heavily on prefix iteration---one of
+\code{PlainTable}'s design
+goals\furl{rocksdb.org/blog/2014/06/23/plaintable-a-new-file-format.html}. This
+results in significantly lower overall read latency compared to the traditional
+block based format.
+
 \section{Mixed workload}
+
+The Lobsters benchmark described in section~\ref{sec:lobsters} is used to
+measure the performance of persistent bases in a real-world setting. The
+benchmark issues queries used in the real Lobsters web application, following a
+distribution modeled after the application's production traffic. Whereas the
+previous benchmarks measure queries per second, the Lobsters benchmark uses
+pages per second as its metric, where separate pages require different queries.
+A single page view can issue both read and write requests, through insertions,
+lookups, and updates. As Soup translates each update to a removal followed by an
+insertion, the benchmark also measures deletion performance. The latency
+measured is the \textit{sojourn} time of each request---the time from the
+request is generated until completion (see section~\ref{sec:vote-open-loop}).
+
+% TODO: maybe have an appendix with the lobsters queries.
+
+The benchmark runs on two separate servers. SQL queries are issued by a workload
+generator and translated to native Soup requests using the MySQL shim layer (see
+section~\ref{sec:mysql-shim}). These requests are handled by a separate server,
+running Soup.
+
+Before initiating the benchmark, the database is pre-populated with a similar
+amount of data to the real Lobsters application: 120 000 comments, 40 000
+stories, and 9200 users. Afterwards the benchmark issues requests following a
+target throughput goal.
+
+Note that unlike the write-throughput benchmark, Soup's write-ahead log is not
+used here. Instead, the benchmark compares purely in-memory---and not durable---
+Soup to Soup with its base tables stored in RocksDB.\@
+
+\subsection{Computational overhead}
+
+The Lobsters benchmark is run on two separate hardware setups. The first, server
+setup 2 (described in section~\ref{sec:server-2}), emulates durable storage
+using a
+RAM-disk\furl{https://manpages.debian.org/stretch/initscripts/tmpfs.5.en.html}.
+This lets the benchmark focus on the computational overhead of storing Soup's
+base tables in RocksDB, while serving as a useful comparison to existing Soup
+benchmarks---which make use of the same server setup.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{graphs/lobsters-ram}
+  \caption{\
+    The 99th percentile sojourn latency of the Lobsters benchmark measured at
+    increasing throughput targets.
+  }\label{fig:lobsters-ram}
+\end{figure}
+
+\subsection{I/O overhead}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{graphs/lobsters-nvme}
+  \caption{\
+    The 99th percentile sojourn latency of the Lobsters benchmark measured at
+    increasing throughput targets.
+  }\label{fig:lobsters-nvme}
+\end{figure}
+
 
 \section{Recovery}
 
@@ -203,11 +273,17 @@ left to RocksDB, which puts a cap on recovery time by ensuring that its
 write-ahead logs never grow beyond a given size. Recovering the actual database
 files, the SS-tables, is ``free''---no data needs to be read into memory.
 
-\subsection{Compressing Snapshots}
+\subsection{Snapshot compression}
 
 \todo{re-run benchmarks with compression}
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{graphs/snapshot-compressed}
+  \caption{\
+  }\label{fig:snapshot-compressed}
+\end{figure}
 
-\subsection{Write-performance with Snapshotting}
+\subsection{Write-performance with snapshotting}
 
 Snapshotting is a significant improvement to Soup's recovery situation, and a
 step in the right direction for Soup as a production-ready system. Regardless,
