@@ -51,7 +51,6 @@ The benchmark is run on the server described in section~\ref{sec:server-1}, with
 the write-ahead log written to one SSD and the database files to another.
 
 \begin{figure}[H]
-  \centering
   \includegraphics[width=\textwidth]{graphs/write-batch}
   \includegraphics[width=\textwidth]{graphs/write-sjrn}
   \caption{\
@@ -86,7 +85,6 @@ implementation, the same vote benchmark used in the previous sections is used,
 with the same hardware.
 
 \begin{figure}[H]
-  \centering
   \includegraphics[width=\textwidth]{graphs/memtable}
   \caption{\
     Write-latency measured at different throughput targets using the \code{vote}
@@ -131,7 +129,6 @@ The benchmark is run on the same server as the write-throughput benchmark (see
 section~\ref{sec:server-1}).
 
 \begin{figure}[H]
-  \centering
   \includegraphics[width=\textwidth]{graphs/replay}
   \caption{\
     The replay performance of in-memory Soup compared to Soup with RocksDB.\@
@@ -151,7 +148,6 @@ imposes limitations that the former does not have, but promises lower read
 latency on fast storage mediums in return.
 
 \begin{figure}[H]
-  \centering
   \includegraphics[width=\textwidth]{graphs/replay-table}
   \caption{\
     Soup replay performance comparison between \code{BlockBasedTable} and
@@ -206,7 +202,6 @@ base tables in RocksDB, while serving as a useful comparison to existing Soup
 benchmarks---which make use of the same server setup.
 
 \begin{figure}[H]
-  \centering
   \includegraphics[width=\textwidth]{graphs/lobsters-ram}
   \caption{\
     The 99th percentile sojourn latency of the Lobsters benchmark measured at
@@ -217,7 +212,6 @@ benchmarks---which make use of the same server setup.
 \subsection{I/O overhead}
 
 \begin{figure}[H]
-  \centering
   \includegraphics[width=\textwidth]{graphs/lobsters-nvme}
   \caption{\
     The 99th percentile sojourn latency of the Lobsters benchmark measured at
@@ -248,7 +242,6 @@ durable base node application is measured as well, denoted as \textit{initial}
 in figure~\ref{fig:graph-recovery}.
 
 \begin{figure}[H]
-  \centering
   \includegraphics[width=\textwidth]{graphs/recovery}
   \caption{\
     The recovery benchmark measures the time it takes to recover after
@@ -275,13 +268,25 @@ files, the SS-tables, is ``free''---no data needs to be read into memory.
 
 \subsection{Snapshot compression}
 
-\todo{re-run benchmarks with compression}
+Compressing snapshots introduce a trade-off between computation and storage
+overhead. Depending on the underlying hardware, the penalty induced from having
+to compress and decompress snapshots might be amortized by the reduced I/O
+usage. To measure the impact on recovery performance, the benchmark used in the
+previous section is run on the same hardware---with and without \code{zlib}
+compression.
+
 \begin{figure}[H]
-  \centering
   \includegraphics[width=\textwidth]{graphs/snapshot-compressed}
   \caption{\
+    The total snapshot recovery time, with and without compression.
   }\label{fig:snapshot-compressed}
 \end{figure}
+
+Recovering from compressed snapshots takes on average three times as long as
+recovering from regular snapshots. This is measured on a server with a
+SSD-drive, and the gap would without doubt be less significant on slower storage
+media. Regardless, with a focus on reducing recovery time, this is not a
+trade-off we are willing to make.
 
 \subsection{Write-performance with snapshotting}
 
@@ -297,7 +302,6 @@ first without snapshotting and then with. The benchmark runs for 60 seconds,
 performing a snapshot every 10 seconds.
 
 \begin{figure}[H]
-  \centering
   \includegraphics[width=\textwidth]{graphs/write-snapshot-batch}
   \caption{\
     Write-latency comparison with and without snapshotting (with a snapshot
@@ -312,7 +316,6 @@ observed in figure~\ref{fig:graph-snapshot}. The penalty is a result of the full
 state clone incurred at each materialized node during a snapshot.
 
 \begin{figure}[H]
-  \centering
   \includegraphics[width=\textwidth]{graphs/write-snapshot-100-batch}
   \caption{\
     100th percentile comparison, with and without snapshotting.
