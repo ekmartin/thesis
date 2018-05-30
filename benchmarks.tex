@@ -143,12 +143,12 @@ CREATE TABLE TableRow (
   PRIMARY KEY(id)
 );
 
-# Primary key reads:
+/* Primary key reads: */
 QUERY ReadRow: SELECT * FROM TableRow WHERE id = ?;
 
-# Secondary key reads:
+/* Secondary key reads */
 QUERY query_c1: SELECT * FROM TableRow WHERE c1 = ?;
-..
+/* .. */
 QUERY query_c9: SELECT * FROM TableRow WHERE c9 = ?;
   \end{minted}
 

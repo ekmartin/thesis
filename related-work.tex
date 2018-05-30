@@ -1,1 +1,62 @@
 \chapter{Related work}\label{chap:related-work}
+
+\todo{todo!}
+\newpage
+
+\section{Indexing}
+
+Index structures are used by databases to facilitate efficient retrieval
+queries. While a majority of traditional database systems maintain indices
+separate from the data itself (which could be stored in \eg a heap
+file~\cite{microsoft-heap, psql-heap}), it has become increasingly common to
+co-locate rows with the index---often referred to as a clustered index.
+Systems such as InnoDB~\cite{innodb-source} and comdb2~\cite{comdb2} rely
+heavily on B-trees for both indexing and row storage, achieving overall decent
+read performance on a wide variety of storage mediums.
+
+At the same time, a gradual increase in write-intensive applications have
+resulted in a myriad of log-structured merge tree based storage systems---a
+data-structure which usually requires less write amplification than
+B-trees~\cite{lsm-vs-b}. While LSM-tree based systems (\eg Google
+Bigtable~\cite{bigtable} and Apache HBase~\cite{hbase}) provide excellent
+availability and scalability, their key-value based APIs are restrictive, and
+lack features such as secondary indexing.
+
+Key-value APIs are sufficient for many applications, while others require more
+advanced features. Google Spanner~\cite{spanner} and its open-source competitors
+remove the need to compromise between strong consistency and scalability, and
+provide an SQL-based query interface to its users. While Spanner combines an
+implementation based on Bigtable with Paxos to provide distributed consistency,
+CockroachDB~\cite{cockroach} and TiDB~\cite{tidb}---both open-source---do the
+same with the LSM-tree key-value store RocksDB~\cite{rocksdb} and the Raft
+consensus algorithm~\cite{raft}.
+
+Both CockroachDB and TiDB implement advanced features (\eg replication and
+sharding) as layered abstractions, with RocksDB's ordered key-value API at the
+core. With clever key schemes and heavy use of RocksDB's iteration properties,
+CockroachDB and TiDB can support secondary indices on top of RocksDB---a
+well-supported and heavily tested library with reliable performance guarantees.
+Other projects, such as SLIK~\cite{slik}, HyperDex~\cite{hyperdex}, and
+Replex~\cite{replex}, implement secondary indexing as first class citizens in
+new distributed key-value stores built from the ground up.
+
+% This section investigates how systems such as CockroachDB and TiDB implement
+% secondary index schemes on top of a key-value API, while taking a look at
+% existing research in the same field.
+
+\subsection{Secondary indices with LSM-trees}
+
+LSM-tree systems achieve high write throughput in part by buffering updates in
+memory, amortizing the disk write penalty across a batch of writes.
+AsterixDB~\cite{asterix-storage} recognizes the effectiveness of the LSM-tree
+approach, and applies the same technique to in-place update index structures.
+The process---which they refer to as LSM-ification---lets AsterixDB build
+secondary indices using data structures that generally perform better while
+doing so, \eg B+ trees. While this is an interesting approach, on-disk data
+structures are far from trivial to implement, and additional data structures
+undoubtedly increase a system's overall complexity---even if the data structures
+are built on the same components.
+
+% TODO: Another approach is to build index schemes on top of the APIs provided
+% by LSM-trees themselves, get/put/iteration, perhaps with slight modifications.
+% this requires less complexity, while still providing good perf.

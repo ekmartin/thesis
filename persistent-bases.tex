@@ -1323,8 +1323,6 @@ retain Soup's durability guarantees, the records from a single packet result in
 a single \code{WriteBatch} (see section~\ref{sec:rocksdb-wal})---persisted once
 towards the end of \code{PersistentState::process\_records}.
 
-\todo{the wal can reside on a separate disk}
-
 \subsection{Building new indices}
 
 Indices added after rows have already been inserted into \code{PersistentState}
