@@ -52,11 +52,37 @@ AsterixDB~\cite{asterix-storage} recognizes the effectiveness of the LSM-tree
 approach, and applies the same technique to in-place update index structures.
 The process---which they refer to as LSM-ification---lets AsterixDB build
 secondary indices using data structures that generally perform better while
-doing so, \eg B+ trees. While this is an interesting approach, on-disk data
+doing so, \eg B-trees. While this is an interesting approach, on-disk data
 structures are far from trivial to implement, and additional data structures
 undoubtedly increase a system's overall complexity---even if the data structures
 are built on the same components.
 
-% TODO: Another approach is to build index schemes on top of the APIs provided
-% by LSM-trees themselves, get/put/iteration, perhaps with slight modifications.
-% this requires less complexity, while still providing good perf.
+Another approach is to build index schemes on top of the existing APIs provided
+by LSM-trees, notably the \code{Get}, \code{Put}, \code{Delete}, and \code{Seek}
+operations provided by systems such as RocksDB.\@ In~\cite{lsm-comparison},
+LSM-tree index structures are split into two categories: \textit{standalone}
+and \textit{embedded}. The former maintains secondary indices in separate
+key-spaces, while the latter embeds the necessary information without
+necessitating additional stored rows.
+
+\subsubsection{Standalone Indices}
+
+In traditional relational database management systems, indices are usually
+maintained as separate data structures (\eg B-trees) with pointers to primary
+key values. Standalone indexing in~\cite{lsm-comparison} stores pointers as
+well, either in the same key-space as regular updates or in separate tables
+(often referred to as \textit{column families} in LSM-based systems). These
+pointers can be maintained either \textit{eagerly} or \textit{lazily}, \eg
+either synchronously on the main-path or asynchronously in the background. The
+latter introduces complexity to the system, but offers potentially improved
+insertion and update performance in return~\cite{deli, pnuts}.
+
+% TODO: list vs composite
+% list is not really a valid alternative
+% composite depends on the iteration performance, requires careful key schemes
+% to make sure that ordering is correct
+% potentially a lot of random reads by following pointers, can inline data
+% instead. cite pingcap, cockroachdb, myrocks
+
+% embedded, their brief experiments. interesting idea, but requires additional
+% modifications to implement top k efficiently.
