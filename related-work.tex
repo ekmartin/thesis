@@ -77,12 +77,92 @@ either synchronously on the main-path or asynchronously in the background. The
 latter introduces complexity to the system, but offers potentially improved
 insertion and update performance in return~\cite{deli, pnuts}.
 
-% TODO: list vs composite
-% list is not really a valid alternative
-% composite depends on the iteration performance, requires careful key schemes
-% to make sure that ordering is correct
-% potentially a lot of random reads by following pointers, can inline data
-% instead. cite pingcap, cockroachdb, myrocks
+How the secondary index pointers are structured varies from scheme to scheme.
+The perhaps most obvious way of doing so is to maintain a serialized list of
+primary keys for each secondary index key, which is then retrieved and updated
+on each insertion. This is referred to as a \textit{posting list} in
+\cite{lsm-comparison}, and \textit{table-based} secondary indexing in
+\cite{hbase-secondary}. In the latter, where a secondary index scheme is
+implemented on top of HBase~\cite{hbase}, a serialized \code{TreeSet} is
+maintained for each secondary index value. The \code{TreeSet} is updated
+synchronously on new insertions, which \cite{lsm-comparison} refers to as
+\textit{eager indexing}. The alternative, \textit{lazy indexing}, would instead
+issue only an insertion for new values, and take care of the concatenation
+either in the background or during read operations (\textit{merge operator} in
+RocksDB~\cite{rocksdb-merge}). While the lazy alternative offers far greater
+insert performance by avoiding random reads, it still requires potentially
+costly list serialization and deserialization.
 
-% embedded, their brief experiments. interesting idea, but requires additional
-% modifications to implement top k efficiently.
+\begin{table}[H]
+  \centering
+  \begin{tabular}{l l l}
+    \toprule
+    \textbf{id} & \textbf{brand} & \textbf{color} \\ \midrule
+    1 & volvo & silver \\ \midrule
+    2 & volvo & blue \\ \midrule
+    3 & audi & red \\ \bottomrule
+  \end{tabular}
+  \quad
+  \begin{tabular}{l l}
+    \toprule
+    \textbf{key} & \textbf{value} \\ \midrule
+    volvo & [1, 2] \\ \midrule
+    audi & [3] \\ \bottomrule
+  \end{tabular}
+
+  \caption{\
+    A separate list of primary keys is maintained for each secondary index key.
+  }\label{table:secondary-list}
+\end{table}
+
+Another alternative is to rely on the ordered iteration properties available in
+LSM-tree based systems such as LevelDB~\cite{leveldb-iteration} and
+RocksDB~\cite{rocksdb-iteration}. By suffixing secondary keys with unique
+primary keys (composite keys in \cite{lsm-comparison}), the pointers can be
+retrieved by iterating through all keys that start with a given secondary index
+prefix, removing the need to store anything in the value portion at all. While
+this requires care to make sure that values with the same prefix are ordered
+next to each other, it completely removes the need for random reads when
+inserting new values. This is similar to how systems such as
+Spanner~\cite{spanner-sql}, TiDB~\cite{tidb-internal}, and
+CockroachDB~\cite{cockroach-design} implement secondary indexes.
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{l l l}
+    \toprule
+    \textbf{id} & \textbf{brand} & \textbf{color} \\ \midrule
+    1 & volvo & silver \\ \midrule
+    2 & volvo & blue \\ \midrule
+    3 & audi & red \\ \bottomrule
+  \end{tabular}
+  \quad
+  \begin{tabular}{l l}
+    \toprule
+    \textbf{key} & \textbf{value} \\ \midrule
+    volvo-1 & \\ \midrule
+    volvo-2 & \\ \midrule
+    audi-3 & \\ \bottomrule
+  \end{tabular}
+
+  \caption{\
+    Secondary index keys are suffixed with the primary key they point to, and
+    can be retrieved by iterating through all secondary index rows with the
+    correct prefix.
+  }\label{table:secondary-order}
+\end{table}
+
+\subsubsection{Embedded indices}
+
+Instead of storing separate index pointers for secondary indices,
+\cite{lsm-comparison} presents an alternative where bloom filters are used to
+determine whether an on-disk block contains rows with a given secondary index
+attribute or not. Queries then iterate through all blocks, referring to the
+in-memory bloom filter to determine whether it requires scanning for potential
+rows. To retrieve values from the LSM-tree memory buffer, a separate B-tree is
+maintained in-memory for each secondary attribute.
+
+Embedded indexing reduces the write-amplification when inserting new rows---no
+extra index data needs to be persisted to disk. In turn, it reduces read
+performance, as retrievals now need to consider every block available, even if
+only ends up reading a small subset.

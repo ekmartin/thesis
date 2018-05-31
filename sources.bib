@@ -1,5 +1,41 @@
 % TODO: turn all `misc` into `online`
 
+@inproceedings{spanner-sql,
+  author = {Bacon, David F. and Bales, Nathan and Bruno, Nico and Cooper, Brian F. and Dickinson, Adam and Fikes, Andrew and Fraser, Campbell and Gubarev, Andrey and Joshi, Milind and Kogan, Eugene and Lloyd, Alexander and Melnik, Sergey and Rao, Rajesh and Shue, David and Taylor, Christopher and van der Holst, Marcel and Woodford, Dale},
+  title = {Spanner: Becoming a SQL System},
+  booktitle = {Proceedings of the 2017 ACM International Conference on Management of Data},
+  series = {SIGMOD '17},
+  year = {2017},
+  isbn = {978-1-4503-4197-4},
+  location = {Chicago, Illinois, USA},
+  pages = {331--343},
+  numpages = {13},
+  url = {http://doi.acm.org/10.1145/3035918.3056103},
+  doi = {10.1145/3035918.3056103},
+  acmid = {3056103},
+  publisher = {ACM},
+  address = {New York, NY, USA},
+  keywords = {cloud computing, distributed systems, sql, transactional databases},
+}
+
+@inproceedings{hbase-secondary,
+  author    = {Joseph Vinish D'silva and
+               Roger Ruiz{-}Carrillo and
+               Cong Yu and
+               Muhammad Yousuf Ahmad and
+               Bettina Kemme},
+  title     = {Secondary Indexing Techniques for Key-Value Stores: Two Rings To Rule
+               Them All},
+  booktitle = {Proceedings of the Workshops of the {EDBT/ICDT} 2017 Joint Conference
+               {(EDBT/ICDT} 2017), Venice, Italy, March 21-24, 2017.},
+  year      = {2017},
+  crossref  = {DBLP:conf/edbt/2017w},
+  url       = {http://ceur-ws.org/Vol-1810/DOLAP_paper_10.pdf},
+  timestamp = {Tue, 26 Dec 2017 18:09:59 +0100},
+  biburl    = {https://dblp.org/rec/bib/conf/edbt/DsilvaRYAK17},
+  bibsource = {dblp computer science bibliography, https://dblp.org}
+}
+
 @inproceedings{deli,
   author={Y. Tang and A. Iyengar and W. Tan and L. Fong and L. Liu and B. Palanisamy},
   booktitle={2015 15th IEEE/ACM International Symposium on Cluster, Cloud and Grid Computing},
@@ -253,6 +289,15 @@
  acmid = {2815426},
  publisher = {ACM},
  address = {New York, NY, USA},
+}
+
+@online{tidb-internal,
+  author = {Li Shen},
+  title = {TiDB Internal (II) - Computing},
+  url = {https://pingcap.com/blog/2017-07-11-tidbinternal2/#sqlonkv},
+  year = {2017},
+  month = {July},
+  urldate = {2018-03-03}
 }
 
 @online{hbase,
@@ -558,6 +603,15 @@
   urldate = {2018-04-20},
 }
 
+@online{cockroach-design,
+  author = {CockroachDB},
+  title = {CockroachDB Design},
+  url = {https://github.com/cockroachdb/cockroach/blob/master/docs/design.md},
+  month = mar,
+  year = 2018,
+  urldate = {2018-04-10},
+}
+
 @online{cockroach-encoding,
   author = {CockroachDB},
   title = {Structured data encoding in CockroachDB SQL},
@@ -576,6 +630,15 @@
   urldate = {2018-04-20},
 }
 
+@online{rocksdb-merge,
+  author = {Facebook Open Source},
+  title = {Leveled Compaction},
+  url = {https://github.com/facebook/rocksdb/wiki/Merge-Operator},
+  month = aug,
+  year = 2017,
+  urldate = {2018-03-20},
+}
+
 @online{rocksdb-compaction,
   author = {Facebook Open Source},
   title = {Leveled Compaction},
@@ -592,6 +655,24 @@
   month = apr,
   year = 2018,
   urldate = {2018-04-20},
+}
+
+@online{rocksdb-iteration,
+  author = {Facebook},
+  title = {RocksDB Iterator},
+  url = {https://github.com/facebook/rocksdb/wiki/Iterator},
+  month = mar,
+  year = 2017,
+  urldate = {2018-02-23},
+}
+
+@online{leveldb-iteration,
+  author = {Google},
+  title = {LevelDB Iteration},
+  url = {https://github.com/google/leveldb/blob/master/doc/index.md#iteration},
+  month = mar,
+  year = 2017,
+  urldate = {2018-02-23},
 }
 
 @online{leveldb,
