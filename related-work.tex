@@ -166,3 +166,38 @@ Embedded indexing reduces the write-amplification when inserting new rows---no
 extra index data needs to be persisted to disk. In turn, it reduces read
 performance, as retrievals now need to consider every block available, even if
 only ends up reading a small subset.
+
+\section{Recovery}
+
+Database researchers observed early on that users needed a way of
+performing a series of operations as a unit, where the result would either be
+made available to concurrent users as one, or not at all~\cite{bernstein}---a
+transaction. At the same time, failures are inevitable in any system, and
+ensuring that the result of previously \textit{committed} transactions still
+remained after crashing was crucial. Together, these requirements formed
+a subset of the ACID~\cite{acid} principles (atomicity, consistency, isolation,
+and durability).
+
+ARIES---Algorithms for Recovery and Isolation Exploting
+Semantics\cite{aries}---has in-large remained the gold standard in transaction
+recovery algorithms for three decades. ARIES persists all changes---regardless
+of commit status---to a durable write-ahead log. During recovery, ARIES first
+applies all missing updates from the log, before it finally reverts changes
+belonging to uncommitted transactions. The former, \code{REDO}, maintains
+durability, while the latter, \code{UNDO}, upholds atomicity. By sequentially
+persisting all changes to the log, ARIES systems are free to write dirty pages
+to durable storage at any point, and does not need to do so prior to committing.
+Referred to as correspondingly \textit{steal} and \textit{no-force}, this allows
+for high throughput processing at the price of increasing complexity.
+
+While the logging structure varies from implementation to implementation, the
+principle of a write-ahead log remains the same. By appending changes to a
+persistent log prior to writing the actual changes, we avoid the performance
+penalties of random writes to durable storage, while still ensuring durability
+in the face of a potential crash. To maintain atomicity for transactions, we
+also log enough information to either safely revert their changes, or fully
+persist them after recovering. With the introduction of fast non-volatile
+memory, the age old wisdom of preferring sequential writes over random updates
+might slowly go away~\cite{mars, wbl}. Regardless, to build systems that perform
+well on hardware most users have access to---still in-large spinning and
+solid-state drives---the arguments in-favor of write-ahead logging still remain.
