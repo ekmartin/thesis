@@ -178,7 +178,7 @@ remained after crashing was crucial. Together, these requirements formed
 a subset of the ACID~\cite{acid} principles (atomicity, consistency, isolation,
 and durability).
 
-ARIES---Algorithms for Recovery and Isolation Exploting
+ARIES---Algorithms for Recovery and Isolation Exploiting
 Semantics\cite{aries}---has in-large remained the gold standard in transaction
 recovery algorithms for three decades. ARIES persists all changes---regardless
 of commit status---to a durable write-ahead log. During recovery, ARIES first
@@ -201,3 +201,80 @@ memory, the age old wisdom of preferring sequential writes over random updates
 might slowly go away~\cite{mars, wbl}. Regardless, to build systems that perform
 well on hardware most users have access to---still in-large spinning and
 solid-state drives---the arguments in-favor of write-ahead logging still remain.
+
+\subsection{Recovery in main-memory databases}
+
+% K-safety: cstore and oltp paper
+% checkpoint: crash recovery scheme in main memory
+% hekaton: transaction log and group commit
+
+Traditional relational database systems were never built with the goal of
+storing entire datasets in main-memory. B-trees, concurrency control techniques,
+buffer pools, and other components were instead built with the opposite in
+mind---efficient processing of data residing on slow durable storage mediums.
+Today's cheap access to vast amounts of volatile main-memory requires different
+thinking, which has given rise to a new type of structured storage system:
+main-memory databases~\cite{main-memory}.
+
+According to \cite{oltp}, the SHORE\furl{http://research.cs.wisc.edu/shore-mt/}
+database system spends over 10\% of its processing time maintaining an
+ARIES-style log. For main-memory systems capable of processing thousands of
+transactions per second, the penalty of writing to durable storage would be far
+beyond 10\%. Regardless, main-memory database systems still need to ensure
+durability somehow, otherwise they would merely be large data structures. VoltDB
+introduced the concept of \textit{command logging}~\cite{voltdb-recovery}, where
+the operation performed is logged instead of the results of its modifications.
+
+Logging logical operations, \eg SQL queries, reduces the amount of data written
+to durable storage. Whereas an ARIES-style log would have to write the results
+of the operations performed, a command log would only need to persist the intent
+of the operation itself. Maintaining a command log reduces the computational
+overhead of durability, by removing the need to calculate before and after
+images of modifications. VoltDB, HyPer~\cite{hyper}, and Hekaton~\cite{hekaton}
+group operations from multiple transactions together in a single batch before
+writing to durable storage, amortizing the fixed cost of syncing to persistent
+storage across multiple transactions. Since main-memory systems never write
+dirty pages to disk, they do not have to make sure that log entries are written
+prior to committing, as a failure would not require undoing changes on durable
+storage. Instead, they have to delay write acknowledgments until the entire
+batch has been persisted. Batching updates with a \textit{group commit} scheme
+greatly increases a system's write throughput, at the expense of potentially
+increased latency of individual operations.
+
+Command logging does on the other hand increase the effort needed to recover
+from a failure. Whereas an ARIES-style log contains the computed results of each
+operation, a command log does not, and needs to redo potentially costly
+computations while recovering. VoltDB, however, claims that failures are rare,
+and that the focus should be on reducing run-time overhead, even if it comes at
+the cost of increased recovery latency. Regardless, recovering from an
+ever-growing log of entries is not a feasible choice. Applications with
+consistently high throughput would never be able to recover, as they would have
+to redo all operations that happened since the beginning of time.
+
+To avoid an infinitely growing write-ahead log, main-memory databases
+\textit{checkpoint} their state at regular intervals~\cite{main-memory, dali,
+margaret, voltdb-recovery, hekaton}. While far from a new concept, increasing
+performance demands have led to the development of more sophisticated checkpoint
+methods~\cite{memory-checkpoint, siren}. The implementation details vary, but
+most systems agree that checkpoints should be performed in an asynchronous
+manner, without blocking the system, and without inducing a significant
+performance penalty. From this, \cite{memory-checkpoint} defines a few key
+properties:
+
+\begin{enumerate}
+  \item Checkpointing should not significantly slow down transactional throughput.
+  \item Checkpointing should not drastically increase regular processing latency.
+  \item Checkpointing should require as little extra memory as possible.
+\end{enumerate}
+
+While the overhead of an algorithm following the aforementioned properties is
+minimal, the asynchronous checkpoint method presented in
+\cite{memory-checkpoint} still introduces a window of time where throughput
+degrades with 10\%. To completely avoid the overhead of durable storage,
+main-memory databases like H-Store rely on replication for
+durability~\cite{hstore}. By replicating data to $ K + 1 $ nodes, the system
+maintains transactional durability for up to $ K $ failures.
+\textit{K-safety}~\cite{cstore} is however naturally susceptible to total
+failures, \eg in the event that multiple data centers fail. As a compromise,
+some systems implement replication together with checkpointing, limiting the
+amount of data lost in a total failure.
