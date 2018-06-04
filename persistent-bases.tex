@@ -1,16 +1,15 @@
 \chapter{Persistent base nodes}\label{chap:persistent-bases}
 
 Updates begin their journey through the Soup data-flow graph at the base nodes,
-after being successfully persisted to Soup's write-ahead log
-(see~\ref{sec:soup-log}). While nodes further down in the graph might be
-\textit{partial}, the base nodes always contain every single record a Soup
-application has seen through its lifetime. This is crucial in maintaining a
-balance between efficient read queries and space usage: popular queries will be
-handled by partial state further down the graph, while reads for in-frequently
-accessed rows will be able to refer all the way up to the source of truth, the
-base nodes, through what in Soup is called a replay (see~\ref{sec:replays}). In
-comparison to existing database systems, base nodes are closest to what
-otherwise might be known as \textit{tables}.
+after being successfully persisted to Soup's write-ahead log. While nodes
+further down in the graph might be \textit{partial}, the base nodes always
+contain every single record a Soup application has seen through its lifetime.
+This is crucial in maintaining a balance between efficient read queries and
+space usage: popular queries will be handled by partial state further down the
+graph, while reads for in-frequently accessed rows will be able to refer all the
+way up to the source of truth, the base nodes, through what in Soup is called a
+replay. In comparison to existing database systems, base nodes are closest to
+what otherwise might be known as \textit{tables}.
 
 \begin{figure}[H]
   \centering

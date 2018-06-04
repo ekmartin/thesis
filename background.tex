@@ -135,7 +135,7 @@ the graph to remain partial, at the cost of having to replay state across
 domains.
 
 
-\subsubsection{Evictions}
+\subsubsection{Eviction}\label{sec:eviction}
 
 To ensure that partial state does in fact remain partial over time, Soup evicts
 data when necessary. Currently this happens when Soup's memory-limit goes beyond
@@ -436,12 +436,104 @@ fn main() {
 
 \section{Rust}
 
+Rust is an open-source systems programming language spearheaded by Mozilla,
+where it is used to build Servo---a next generation browser
+engine\furl{https://servo.org/}. Rust provides memory safety without the runtime
+overhead of \eg garbage collection, making it a suitable language for everything
+from embedded systems to web service backends.
+
 When choosing a programming language, developers are often forced to compromise
-between higher level abstractions and performance.
+between higher level abstractions and performance. Large and latency sensitivity
+projects like databases often opt for the latter through low-level languages
+like C, which avoid expensive runtime safety checks. Rust removes this dilemma
+altogether by providing developers with both the fine-tuned control and
+performance they are used to in low-level languages, while offering abstractions
+developers might be familiar with from interpreted languages.
 
-\subsection{Foreign Function Interface}
+\begin{listing}[H]
+  \begin{minted}[frame=lines]{rust}
+fn suffix(input: &mut String) {
+    input.push_str(" is a String!");
+}
 
-Rust has excellent support for calling into external C programs.
+fn output(input: String) {
+    println!("Hello: {}", input);
+}
+
+fn main() {
+    // Construct a mutable String, from a string litteral (str):
+    let mut input = String::from("Hi!");
+    // Pass a mutable reference to suffix:
+    suffix(&mut input);
+    // Finally, move our input variable into the output function:
+    output(input);
+    // println!("This line would not compile: {}", input);
+}
+  \end{minted}
+  \caption{\
+    The example shows the basics of Rust's move semantics. The \texttt{input}
+    variable cannot be used after the call to \texttt{output()}, as it has been
+    \textit{moved} into the function.
+  }
+\end{listing}
+
+One of Rust’s key features is providing compile time safety both in terms of
+types and memory. The latter is done through an ownership model which lets
+developers program mostly without thinking about memory allocation and
+deallocation, without the lowered performance of using something like a garbage
+collector. Each variable in Rust is assigned one and only one owner, and the
+variable is deallocated when that owner goes out of scope.
+
+\subsection{Foreign Function Interface}\label{sec:ffi}
+
+Rust has excellent support for calling into C programs, which lets developers
+access the myriad of libraries written in C, together with C++ programs that
+provide C interfaces. To call external programs, developers define each external
+function in a \textit{foreign function
+interface}\furl{https://doc.rust-lang.org/book/first-edition/ffi.html}, through
+use of the \code{extern} keyword, which also supports linking to external
+libraries. Note that the call to \code{rand} in listing~\ref{lst:extern} needs
+to be wrapped in an \code{unsafe} block. While Rust can ensure the safety of
+\textit{Rust} code at compile time, it cannot not do so for third-party
+applications written in other languages. By introducing the \code{unsafe}
+keyword, the blocks of code the developer is forced to maintain the safety of is
+isolated to the smallest possible region.
+
+\begin{listing}[H]
+  \begin{minted}[frame=lines]{rust}
+extern "C" {
+  fn rand() -> i32;
+}
+
+fn main() {
+  unsafe {
+    println!("Random number: {}", rand());
+  }
+}
+  \end{minted}
+  \caption{\
+    By defining \code{rand} from the C standard library as an external function,
+    we can call it from our Rust program.
+  }\label{lst:extern}
+\end{listing}
+
+In the same manner, Rust supports defining an interface that can be called from
+other languages, such as C, as shown in listing~\ref{lst:call-extern}. This is
+especially useful for libraries that require functions as arguments, \eg callbacks.
+
+\begin{listing}[H]
+  \begin{minted}[frame=lines]{rust}
+#[no_mangle]
+pub extern "C" fn multiply(a: i32, b: i32) -> i32 {
+  a * b
+}
+  \end{minted}
+  \caption{\
+    The \code{multiply} functions can be called through the C-calling
+    convention by other programs. The \code{no\_mangle} ensures the
+    \code{multiply} name stays unmodified by the compiler.
+  }\label{lst:call-extern}
+\end{listing}
 
 \section{Profiling}
 
