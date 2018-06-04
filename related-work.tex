@@ -47,10 +47,6 @@ Other projects, such as SLIK~\cite{slik}, HyperDex~\cite{hyperdex}, and
 Replex~\cite{replex}, implement secondary indexing as first class citizens in
 new distributed key-value stores built from the ground up.
 
-% This section investigates how systems such as CockroachDB and TiDB implement
-% secondary index schemes on top of a key-value API, while taking a look at
-% existing research in the same field.
-
 \subsection{Secondary indices with LSM-trees}
 
 LSM-tree systems achieve high write throughput in part by buffering updates in
@@ -73,6 +69,9 @@ key-spaces, while the latter embeds the necessary information without
 necessitating additional stored rows.
 
 \subsubsection{Standalone Indices}
+
+% TODO:
+% Reducing the Storage Overhead of Main-Memory OLTP Databases with Hybrid Indexes
 
 In traditional relational database management systems, indices are usually
 maintained as separate data structures (\eg B-trees) with pointers to primary
