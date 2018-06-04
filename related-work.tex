@@ -179,7 +179,7 @@ a subset of the ACID~\cite{acid} principles (atomicity, consistency, isolation,
 and durability).
 
 ARIES---Algorithms for Recovery and Isolation Exploiting
-Semantics\cite{aries}---has in-large remained the gold standard in transaction
+Semantics~\cite{aries}---has in-large remained the gold standard in transaction
 recovery algorithms for three decades. ARIES persists all changes---regardless
 of commit status---to a durable write-ahead log. During recovery, ARIES first
 applies all missing updates from the log, before it finally reverts changes
@@ -203,10 +203,6 @@ well on hardware most users have access to---still in-large spinning and
 solid-state drives---the arguments in-favor of write-ahead logging still remain.
 
 \subsection{Recovery in main-memory databases}
-
-% K-safety: cstore and oltp paper
-% checkpoint: crash recovery scheme in main memory
-% hekaton: transaction log and group commit
 
 Traditional relational database systems were never built with the goal of
 storing entire datasets in main-memory. B-trees, concurrency control techniques,
@@ -278,3 +274,80 @@ maintains transactional durability for up to $ K $ failures.
 failures, \eg in the event that multiple data centers fail. As a compromise,
 some systems implement replication together with checkpointing, limiting the
 amount of data lost in a total failure.
+
+\subsection{Snapshotting in distributed systems}\label{sec:rel-snapshotting}
+
+Determining the global state of a distributed system is a useful property in
+scenarios ranging from steady-state detection of deadlocks, monitoring,
+debugging, and finally, failure recovery~\cite{intro-snapshot}---the aspect of
+which snapshotting is used for in this thesis. By combining local checkpoints
+across the Soup data-flow graph, a global checkpoint---a snapshot---can be
+formed, and later recovered from in case of failures.
+
+To perform a global snapshot, each node needs to record their local state at the
+same instant across the system, without sharing memory or access to a global
+clock. At the same time, the snapshot should happen without pausing regular
+processing. Chandy and Lamport first introduced the problem of acquiring a
+distributed snapshot in~\cite{chandy-lamport}, which has since been the source
+of inspiration for a wide variety of work within the field. Chandy and Lamport
+presented a solution aimed at distributed systems using first-in first-out
+channels, with preserved message ordering, by solving two main issues: deciding
+when to take a snapshot, and which messages should be part of said snapshot.
+
+\begin{figure}
+\begin{displayquote}
+  ``\textit{The state-detection algorithm plays the role of a group of photographers
+observing a panoramic, dynamic scene, such as a sky filled with migrating birdsa
+scene so vast that it cannot be captured by a single photograph. The photographers
+must take several snapshots and piece the snapshots together to form a
+picture of the overall scene. The snapshots cannot all be taken at precisely the
+same instant because of synchronization problems. Furthermore, the photographers
+should not disturb the process that is being photographed; for instance,
+they cannot get all the birds in the heavens to remain motionless while the
+photographs are taken. Yet, the composite picture should be meaningful. The
+problem before us is to define “meaningful” and then to determine how the
+photographs should be taken.}''
+\end{displayquote}
+  \caption{Chandy and Lamport's description of the global snapshotting problem.}
+\end{figure}
+
+Chandy-Lamport's key insight was to introduce a marker message, used as a
+separator between messages that should be included in the snapshot, and messages
+that should not. Processes that receive a snapshot marker should immediately
+take a snapshot of all messages received prior to the marker, and forward the
+resulting state to a process capable of assembling all its received local
+snapshots to a global view of the system. The channels' FIFO property ensures
+the exclusion of messages arriving after the marker. The resulting algorithm
+requires $ O(e) $ messages to initiate a snapshot, where $ e $ is the amount of
+edges in the graph. The messages can be sent out in parallel, resulting in a $
+O(d) $ guarantee to complete the snapshot, where $ d $ is the diameter of the
+graph.
+
+Later on, Spezialetti and Kearns improved the Chandy-Lamport algorithm by
+recognizing that the combining phase of snapshotting could be performed
+concurrently across the graph~\cite{spez-k}. Instead of having all nodes send a
+snapshot to a single initiator, each node in the graph would be assigned a
+\textit{parent} which it would forward its local state to, forming a spanning
+tree of initiators across the graph.
+
+Chandy and Lamport's algorithm is designed with FIFO channels in mind, and a
+second class of snapshotting algorithms extend Chandy-Lamport in various ways
+for non-FIFO channels. Lai and Yang~\cite{lai-yang} introduced a solution that
+removes the need for explicit control messages, by including the required
+snapshotting information in existing messages. To maintain consistency without
+explicit marker messages, Lai-Yang makes use of a two-coloring scheme. Every
+process is initially white and turns red when initiating a snapshot, while
+recording all messages since the last snapshot was taken. Another alternative is
+the Mattern algorithm~\cite{mattern}, which makes use of vector clocks to
+perform global snapshots in non-FIFO environments.
+
+Systems that uphold causal ordering of all messages open for a third category of
+snapshotting algorithms. A causally ordered system guarantees that for two
+messages $ m_1 $ and $ m_2 $, if $ sent(m_1) < send(m_2) $ then $ deliver(m_1) <
+deliver(m_2) $ for any common destinations of both $ m_1 $ and $ m_2 $. This
+removes the need for Chandy-Lamport's explicit synchronization markers, and both
+Acharya-Badrinath~\cite{acharya} and Alagar-Venkatesan~\cite{alagar} present
+snapshotting algorithms where the initiator requests a snapshot directly from
+each node, reducing the required messages from $ O(e) $ to $ O(n) $.
+
+% TODO: write about Consistency Issues in Distributed Checkpoints

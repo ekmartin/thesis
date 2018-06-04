@@ -126,31 +126,12 @@ Soup's way of asynchronously propagating updates through its query-graph
 resembles the communication done in a distributed system. Being able to observe
 the global state in a distributed system---where access to a common clock is
 rare---is an immensely useful property, crucial to resolving a certain category
-of problems, such as deadlock detection.
-
-Chandy and Lamport first introduced the problem of acquiring a distributed
-snapshot in~\cite{chandy-lamport}, which has since been the source of
-inspiration for a wide variety of work within the field. Chandy and Lamport
-presented a solution aimed at distributed systems using first-in first-out
-channels, with preserved message ordering, by solving two main issues: deciding
-when to take a snapshot, and which messages should be part of said snapshot.
-
-The key insight in~\cite{chandy-lamport} was to introduce a marker message, used
-as a separator between messages that should be included in the snapshot, and
-messages that should not. Processes that receive a snapshot marker should
-immediately take a snapshot of all messages received prior to the marker, and
-forward the resulting state to a process capable of assembling all its received
-local snapshots to a global view of the system. The channels' FIFO property
-ensures the exclusion of messages arriving after the marker. The resulting
-algorithm requires $ O(e) $ messages to initiate a snapshot, where $ e $
-is the amount of edges in the graph. The messages can be sent out in parallel,
-resulting in a $ O(d) $ guarantee to complete the snapshot, where $ d $ is the
-diameter of the graph.
-
-Lai and Yang~\cite{lai-yang} later extended this scheme with support for
-non-FIFO channels with a solution that also removed the need for explicit
-control messages, piggy-backing the required snapshot information onto existing
-packets.
+of problems, such as deadlock detection and global checkpointing.
+Section~\ref{sec:rel-snapshotting} introduces a series of algorithms for
+snapshotting distributed systems, including the
+Chandy-Lamport~\cite{chandy-lamport} method of propagating an explicit snapshot
+marker throughout the system to ensure consistency---implemented later in this
+chapter.
 
 \subsection{Algorithm}
 

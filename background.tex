@@ -89,7 +89,7 @@ with Soup being able to transition 95\% of all schema changes without downtime.
 
 Changes to the base table schema happen in-place, and Soup's base nodes retain a
 full history of columns for each table. This ensures that both existing and new
-requests can be served alongside each-other, allowing the data-flow graph to
+requests can be served alongside each other, allowing the data-flow graph to
 transition without downtime.
 
 \subsubsection{Domains}
@@ -123,7 +123,7 @@ spread between multiple computational units.
 \todo{show a figure with a sharder?}
 
 Balancing the data across a cluster is essential in scaling Soup to larger
-data-sets. Without it, Soup's capabilities would be capped at the memory size of
+datasets. Without it, Soup's capabilities would be capped at the memory size of
 the largest machine in the cluster. Soup shards data by hash-partitioning keys
 statically. This is unfortunate for workloads skewed towards a small key subset,
 where only a few domains might end up serving most of the requests received.
@@ -435,6 +435,9 @@ fn main() {
 \end{listing}
 
 \section{Rust}
+
+When choosing a programming language, developers are often forced to compromise
+between higher level abstractions and performance.
 
 \subsection{Foreign Function Interface}
 
