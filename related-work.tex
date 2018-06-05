@@ -33,10 +33,10 @@ Key-value APIs are sufficient for many applications, while others require more
 advanced features. Google Spanner~\cite{spanner} and its open-source competitors
 remove the need to compromise between strong consistency and scalability, and
 provide an SQL-based query interface to its users. While Spanner combines an
-implementation based on Bigtable with Paxos to provide distributed consistency,
-CockroachDB~\cite{cockroach} and TiDB~\cite{tidb}---both open-source---do the
-same with the LSM-tree key-value store RocksDB~\cite{rocksdb} and the Raft
-consensus algorithm~\cite{raft}.
+implementation based on Bigtable with Paxos~\cite{paxos} to provide distributed
+consistency, CockroachDB~\cite{cockroach} and TiDB~\cite{tidb}---both
+open-source---do the same with the LSM-tree key-value store
+RocksDB~\cite{rocksdb} and the Raft consensus algorithm~\cite{raft}.
 
 Both CockroachDB and TiDB implement advanced features (\eg replication and
 sharding) as layered abstractions, with RocksDB's ordered key-value API at the

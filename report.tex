@@ -8,6 +8,7 @@
 % \documentclass[b5paper, twoside, openright]{report}
 % \usepackage[lmargin=25mm,rmargin=25mm,tmargin=27mm,bmargin=30mm]{geometry}
 \usepackage[tmargin=27mm, bmargin=30mm]{geometry}
+% \usepackage[a4,center,frame]{crop}
 
 \usepackage{csquotes}
 \usepackage{microtype}
@@ -44,20 +45,22 @@
 \usetikzlibrary{positioning}
 \usetikzlibrary{shapes,decorations,shadows}
 
+% Prevent LaTeX from stretching pages out:
+\raggedbottom
+
 % BibLaTeX for bibliography
 \usepackage[
   backend=bibtex,
-  style=numeric-comp,
+  style=numeric,
   minalphanames=3,
   isbn=false,
   sortcites=true,
   sorting=anyt,
   abbreviate=false,
+  giveninits=true,
   url=false,
   doi=false,
-  maxnames=6,
-  minbibnames=3,
-  maxbibnames=7]{biblatex}
+  maxnames=9]{biblatex}
 \setlength\bibitemsep{5pt}
 \addbibresource{sources.bib}
 
@@ -92,11 +95,11 @@
 
 \input{macros}
 
-\tableofcontents
-
 \begin{abstract}
   \input{abstract}
 \end{abstract}
+
+\tableofcontents
 
 \ChNameVar{\fontsize{14}{16}\usefont{OT1}{cmr}{m}{n}\selectfont}
 \ChNumVar{\fontsize{60}{62}\usefont{OT1}{qpl}{m}{n}\selectfont}
