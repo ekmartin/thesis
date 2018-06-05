@@ -44,11 +44,12 @@ nodes would achieve the following goals:
 \newpage
 
 \section{In-memory state}\label{sec:in-memory-state}
+
 The current in-memory state implementation provides a key-value API with support
 for multiple indices. A separate state data structure is kept for each
 materialized node, including base nodes. The same data structure is used by both
-partially and fully materialized nodes, however as base nodes always have to be
-fully materialized this section will omit describing details regarding the
+partially and fully materialized nodes, but as base nodes always have to be
+fully materialized, this section will omit describing details regarding the
 former. The state data structure will be referred to as \code{State}.
 
 \subsection{Adding indices}

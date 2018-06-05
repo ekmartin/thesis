@@ -12,14 +12,14 @@ techniques in distributed systems, necessary for chapter~\ref{chap:recovery}.
 
 \section{Indexing}
 
-Index structures are used by databases to facilitate efficient retrieval
-queries. While a majority of traditional database systems maintain indices
-separate from the data itself (which could be stored in \eg a heap
-file~\cite{microsoft-heap, psql-heap}), it has become increasingly common to
-co-locate rows with the index---often referred to as a clustered index.
-Systems such as InnoDB~\cite{innodb-source} and comdb2~\cite{comdb2} rely
-heavily on B-trees for both indexing and row storage, achieving overall decent
-read performance on a wide variety of storage mediums.
+Index structures are used by databases to facilitate efficient retrieval. While
+a majority of traditional database systems maintain indices separate from the
+data itself (which could be stored in \eg a heap file~\cite{microsoft-heap,
+psql-heap}), it has become increasingly common to co-locate rows with the
+index---often referred to as a clustered index. Systems such as
+InnoDB~\cite{innodb-source} and comdb2~\cite{comdb2} rely heavily on B-trees for
+both indexing and row storage, achieving overall decent read performance on a
+wide variety of storage mediums.
 
 At the same time, a gradual increase in write-intensive applications have
 resulted in a myriad of log-structured merge tree based storage systems---a
@@ -60,15 +60,17 @@ structures are far from trivial to implement, and additional data structures
 undoubtedly increase a system's overall complexity---even if the data structures
 are built on the same components.
 
+% TODO: generally perform better while doing so
+
 Another approach is to build index schemes on top of the existing APIs provided
 by LSM-trees, notably the \code{Get}, \code{Put}, \code{Delete}, and \code{Seek}
 operations provided by systems such as RocksDB.\@ In~\cite{lsm-comparison},
-LSM-tree index structures are split into two categories: \textit{standalone}
-and \textit{embedded}. The former maintains secondary indices in separate
-key-spaces, while the latter embeds the necessary information without
-necessitating additional stored rows.
+LSM-tree index structures are split into two categories: \textit{standalone} and
+\textit{embedded}. The former maintains secondary indices in separate
+key-spaces, while the latter embeds the necessary information without additional
+stored rows.
 
-\subsubsection{Standalone Indices}
+\subsubsection{Standalone indices}
 
 % TODO:
 % Reducing the Storage Overhead of Main-Memory OLTP Databases with Hybrid Indexes
@@ -131,7 +133,7 @@ this requires care to make sure that values with the same prefix are ordered
 next to each other, it completely removes the need for random reads when
 inserting new values. This is similar to how systems such as
 Spanner~\cite{spanner-sql}, TiDB~\cite{tidb-internal}, and
-CockroachDB~\cite{cockroach-design} implement secondary indexes.
+CockroachDB~\cite{cockroach-design} implement secondary indices.
 
 \begin{table}[H]
   \centering
@@ -168,7 +170,7 @@ in-memory bloom filter to determine whether it requires scanning for potential
 rows. To retrieve values from the LSM-tree memory buffer, a separate B-tree is
 maintained in-memory for each secondary attribute.
 
-Embedded indexing reduces the write-amplification when inserting new rows---no
+Embedded indexing reduces write-amplification when inserting new rows---no
 extra index data needs to be persisted to disk. In turn, it reduces read
 performance, as retrievals now need to consider every block available, even if
 only ends up reading a small subset.

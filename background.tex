@@ -9,6 +9,8 @@ concepts are described, used to reason about performance issues throughout the
 thesis. Finally, the two storage engines embedded in separate implementation
 iterations of persistent base tables are studied.
 
+% TODO: this sucks
+
 \newpage
 
 \section{Soup}
@@ -26,15 +28,14 @@ This section introduces Soup's core concepts.
 Applications using Soup define base table schemas and a set of queries ahead of
 time. Whereas the former is common in traditional relational database management
 systems, the latter is not, and is the primary source of Soup's read performance
-improvements. A relational database computes the result of queries on-the-fly by
-parsing queries into a query-graph, which it then executes. This requires
-potentially costly computations to be performed multiple times for separate
-queries, while throwing away intermediary results that could be re-used. Soup
-instead builds a \textit{data-flow} graph from its pre-defined queries,
-propagating each update through it at write-time. Computations can then be
-incrementally maintained on each write, reducing the work needed by a
-read-operation to something more similar to a simple key-value read in a caching
-system.
+improvements. A relational database computes the result of queries on-the-fly,
+by building a query-graph, which it then executes. This requires potentially
+costly computations to be performed multiple times for separate queries, while
+throwing away intermediary results that could be re-used. Soup instead builds a
+\textit{data-flow} graph from its pre-defined queries, propagating each update
+through it at write-time. Computations can then be incrementally maintained on
+each write, reducing the work needed by a read-operation to something more
+similar to a simple key-value read in a caching system.
 
 \begin{listing}[H]
   \begin{minted}[frame=lines]{sql}
@@ -69,21 +70,21 @@ nodes, where a full copy of the state is always maintained.
 
 Schema migrations are inevitable in long-running applications: business
 requirements change, projects are refactored, and new features are added.
-Performing migrations on traditional database systems, without downtime, is on
+Performing migrations in traditional database systems, without downtime, is on
 the other hand far from trivial~\cite{stripe, gh-ost}. While Soup requires both
-the schema \textit{and} all queries to be defined, it handles changes in both
-seamlessly.
+the schema and all queries to be defined ahead of time, it handles changes in
+both seamlessly.
 
 Added queries extend the existing data-flow with additional nodes, while
 re-using as much as possible of the existing graph. New partially materialized
 nodes can start serving requests right away, by fetching data from ancestor
 nodes if necessary. This is not the case with fully materialized nodes, which
 require a full representation of their state at all times. To bring these nodes
-online, Soup incurs a full replay of all the state needed, potentially delaying
-new requests until all replays have completed. Review of all the migrations
-performed during the lifetime of the HotCRP conference review
+online, Soup incurs a full replay of the state needed, potentially delaying new
+requests until all replays have completed. Review of the migrations performed
+during the lifetime of the HotCRP conference review
 program~\cite{hotcrp}---which uses MySQL---showed that these delays were rare,
-with Soup being able to transition 95\% of all schema changes without downtime.
+with Soup being able to transition 95\% of schema changes without downtime.
 
 \todo{figure of a changing data-flow graph}
 
@@ -107,27 +108,28 @@ replay requests.
 Domains are separated by egress and ingress nodes, responsible for maintaining
 communication across domain boundaries using a buffered channel. When Soup is
 run in a distributed fashion, communication between separate domains happen
-here, over TCP sockets.\@
+over TCP sockets, between the egress and ingress nodes.
 
 \subsubsection{Sharding}
 
-Distributing domains across computational units lets Soup divide its
-computational load between a cluster of machines. This is only an improvement if
-the load is uniformly spread across all domains. When that is not the case, and
-a majority of the data is skewed towards a single domain, Soup is left to
-processing most of the requests in a single computational unit. This is where
-sharding comes in. By splitting the atom that is a single domain into multiple
-shards, both the computational load and the data stored at that domain can be
-spread between multiple computational units.
+Distributing domains across computational units lets Soup divide its processing
+load between a cluster of machines. This is only an improvement if the load is
+uniformly spread across all domains. When that is not the case, and a majority
+of the data is skewed towards a single domain, Soup is left to processing most
+of the requests in a single computational unit. This is where sharding comes in.
+By splitting the atom that is a single domain into multiple shards, both the
+computational load and the data stored at that domain can be spread between
+multiple computational units.
 
 \todo{show a figure with a sharder?}
 
 Balancing the data across a cluster is essential in scaling Soup to larger
-datasets. Without it, Soup's capabilities would be capped at the memory size of
-the largest machine in the cluster. Soup shards data by hash-partitioning keys
-statically. This is unfortunate for workloads skewed towards a small key subset,
-where only a few domains might end up serving most of the requests received.
-Dynamic sharding would help here and is a future goal for Soup.
+datasets. Without sharding, Soup's capabilities would be capped at the memory
+size of the largest machine in the cluster. Soup shards data by
+hash-partitioning keys statically. This is unfortunate for workloads skewed
+towards a small key subset, where only a few domains might end up serving most
+of the requests received. Dynamic sharding would evenly re-balance the workload
+across the shards, and is a future implementation goal for Soup.
 
 When necessary, a \textit{sharder} node is inserted between domains, translating
 between sharding schemes in separate domains. This allows nodes further down in
@@ -198,16 +200,14 @@ age < 10} would produce a filter operator emitting only records where \code{age
 
 Whereas stateless operators resemble their counter-parts in relational
 databases~\cite{codd}, Soup's stateful operators compute results incrementally
-by maintaining internal state between updates. This saves Soup from
-re-doing potentially expensive computations, by instead mutating the previous
-result when a new record arrives.
-
-The \textit{count} operator---produced by a SQL \code{COUNT}-clause---is an
-example of a stateful operator, where \code{Positive} and \code{Negative}
-records incur an addition or subtraction of the current count, respectively.
-Another example is the \textit{top-k} operator, perhaps produced by an
-\code{ORDER BY}-clause coupled with a \code{LIMIT} to determine the $ k $
-most significant or insignificant elements.
+by maintaining internal state between updates. This saves Soup from re-doing
+potentially expensive computations, by instead mutating the previous result when
+a new record arrives. The \textit{count} operator---produced by a SQL
+\code{COUNT}-clause---is an example of a stateful operator, where
+\code{Positive} and \code{Negative} records incur an addition or subtraction of
+the current count, respectively. Another example is the \textit{top-k} operator,
+produced by \eg an \code{ORDER BY}-clause coupled with a \code{LIMIT} to
+determine the $ k $ most significant or insignificant elements.
 
 \begin{figure}[H]
   \centering
@@ -249,7 +249,7 @@ performed.
 Regardless, companies scaling web applications to large amounts of users often
 opt for systems with lesser consistency guarantees~\cite{dynamo, pnuts, werner}.
 While the performance of strongly consistent systems have taken a turn for the
-better with the introduction of horizontally systems with clearly defined
+better with the introduction of horizontally scalable systems with clearly defined
 consistency guarantees~\cite{spanner, cockroach}, the race is still far from
 even when compared to systems with lesser consistency guarantees. At the same
 time, the question of whether strong consistency is actually a requirement for
@@ -257,19 +257,21 @@ most applications remain. Analysis of live requests at
 Facebook~\cite{existential} showed the opposite: only 0.0004\% of reads would
 have returned different results in a strongly consistent system with total
 ordering. These cases could then be handled explicitly, avoiding the need to
-penalize the performance of the entire system for a fraction of the requests.
+penalize the performance of an entire system for a fraction of the requests.
 
 Soup targets applications where eventual consistency is sufficient, and would
 not be able to provide the performance it does without it. Eventual consistency
 avoids the need for explicit synchronization on every update, while allowing
 Soup to scale in a distributed fashion without a total ordering of writes.
-Clients receive write acknowledgments for writes when the update has been safely
-persisted to durable storage, after which it propagates through Soup's data-flow
+Clients receive write acknowledgments for writes when updates have been safely
+persisted to durable storage, after which they are propagated through Soup's data-flow
 graph asynchronously.
 
 Reads access double-buffered hash tables directly~\cite{evmap}, without the need
 for locks. Writes update one of the buffers, and expose updated content to the
 readers with an atomic swap.
+
+% TODO: maybe write a little more about the readers here
 
 \subsection{Architecture}
 
@@ -372,20 +374,20 @@ external API.\@ Soup's MySQL shim~\cite{soup-mysql} makes this easier by letting
 applications communicate with Soup using the MySQL binary protocol.
 
 The MySQL shim acts as a separate service, which clients interact with over
-TCP/IP.\@ Received queries extend the Soup data-flow graph if needed, before
-executing the query by forwarding it to an appropriate Soup worker.
+TCP.\@ Received queries extend the Soup data-flow graph if needed, before they
+are forwarded to an appropriate Soup worker for execution.
 
-\section{Recovery}
+% TODO: maybe write a little more
 
-\section{bincode}
+\section{\code{bincode}}\label{sec:bincode}
 
-bincode~\cite{bincode} is a Rust binary serialization library, used heavily
+\code{bincode}~\cite{bincode} is a binary serialization library, used heavily
 throughout both this thesis and in Soup, for everything from RPC
-communication to persisting data to durable storage. In short, bincode takes an
+communication to persisting data to durable storage. In short, \code{bincode} takes an
 arbitrary Rust object and turns it into a series of bytes---an encoded object.
 The size of the resulting byte stream is usually either less than, or the same
-as, the size of the source object. bincode builds on top of the
-Serde\furl{https://serde.rs/} serialization framework.
+as, the size of the source object. \code{bincode} builds on top of the
+\code{Serde}\furl{https://serde.rs/} serialization framework.
 
 As the encoded format is of relevance to later sections, we will briefly go
 through it here. Primitive values, such as numbers, are encoded directly using
@@ -431,7 +433,10 @@ fn main() {
 }
   \end{minted}
 
-  \caption{}\label{lst:bincode}
+  \caption{\
+    Types implementing the \code{Serialize} and \code{Deserialize} traits can be
+    encoded and decoded using \code{bincode}.
+  }\label{lst:bincode}
 \end{listing}
 
 \section{Rust}
@@ -449,6 +454,8 @@ like C, which avoid expensive runtime safety checks. Rust removes this dilemma
 altogether by providing developers with both the fine-tuned control and
 performance they are used to in low-level languages, while offering abstractions
 developers might be familiar with from interpreted languages.
+
+% TODO: avoid expensive runtime safety checks is a weird sentence
 
 \begin{listing}[H]
   \begin{minted}[frame=lines]{rust}
@@ -484,6 +491,8 @@ deallocation, without the lowered performance of using something like a garbage
 collector. Each variable in Rust is assigned one and only one owner, and the
 variable is deallocated when that owner goes out of scope.
 
+% TODO: write a little more here
+
 \subsection{Foreign Function Interface}\label{sec:ffi}
 
 Rust has excellent support for calling into C programs, which lets developers
@@ -492,12 +501,7 @@ provide C interfaces. To call external programs, developers define each external
 function in a \textit{foreign function
 interface}\furl{https://doc.rust-lang.org/book/first-edition/ffi.html}, through
 use of the \code{extern} keyword, which also supports linking to external
-libraries. Note that the call to \code{rand} in listing~\ref{lst:extern} needs
-to be wrapped in an \code{unsafe} block. While Rust can ensure the safety of
-\textit{Rust} code at compile time, it cannot not do so for third-party
-applications written in other languages. By introducing the \code{unsafe}
-keyword, the blocks of code the developer is forced to maintain the safety of is
-isolated to the smallest possible region.
+libraries.
 
 \begin{listing}[H]
   \begin{minted}[frame=lines]{rust}
@@ -517,6 +521,13 @@ fn main() {
   }\label{lst:extern}
 \end{listing}
 
+Note that the call to \code{rand} in listing~\ref{lst:extern} needs
+to be wrapped in an \code{unsafe} block. While Rust can ensure the safety of
+\textit{Rust} code at compile time, it cannot not do so for third-party
+applications written in other languages. By introducing the \code{unsafe}
+keyword, the blocks of code the developer is forced to maintain the safety of is
+isolated to the smallest possible region.
+
 In the same manner, Rust supports defining an interface that can be called from
 other languages, such as C, as shown in listing~\ref{lst:call-extern}. This is
 especially useful for libraries that require functions as arguments, \eg callbacks.
@@ -529,9 +540,9 @@ pub extern "C" fn multiply(a: i32, b: i32) -> i32 {
 }
   \end{minted}
   \caption{\
-    The \code{multiply} functions can be called through the C-calling
-    convention by other programs. The \code{no\_mangle} ensures the
-    \code{multiply} name stays unmodified by the compiler.
+    The \code{multiply} functions can be called through the C-calling convention
+    by other programs. The \code{no\_mangle} pragma ensures the \code{multiply}
+    name stays unmodified by the compiler.
   }\label{lst:call-extern}
 \end{listing}
 
@@ -548,7 +559,7 @@ answer the question ``What is the CPU spending time on?''.
 \code{perf} collects information from both hardware counters and logical
 tracepoints. The latter is especially useful for recording call graphs of a
 program, which in turn lets us produce flame graphs like the one in
-figure~\ref{fig:flame-example} using tools such as
+figure~\ref{fig:flame-example}, using tools such as
 \code{FlameGraph}\furl{https://github.com/brendangregg/FlameGraph} and
 \code{FlameScope}\furl{https://github.com/Netflix/flamescope}. Flame graphs show
 time spent on the horizontal axis, while showing the call graph vertically.
@@ -563,6 +574,7 @@ time spent on the horizontal axis, while showing the call graph vertically.
 
 \subsection{Memory}
 
+% TODO: shitty sentence
 Memory leaks happen when we continually allocate memory without freeing it. This
 can easily happen in languages without dynamic memory allocation, when a
 programmer forgets to deallocate some portion of memory after using it. At the
@@ -654,7 +666,7 @@ With a rollback journal, SQLite requires a full exclusive lock to be held for
 the duration of all mutations to prevent file corruption, blocking any potential
 readers from accessing the database. This is the main reason SQLite is commonly
 not used as the storage system for applications that require high-performance
-concurrent access to their database (\eg web applications backends with multiple
+concurrent access to their database (\eg web application backends with multiple
 active users): only a single write operation could be performed at the time.
 This is not the case with reads, which hold shared locks.
 
@@ -716,10 +728,9 @@ sqlite3_bind_int(statement, 1, id);
 
 In addition, most programming languages have at least one popular library for
 accessing SQLite, abstracting away the need to directly call into the C-bindings
-through more idiomatic APIs for each language.
-
-SQLite also provides a command-line interface, which can be used to directly
-read from and modify a database with SQL statements.
+through more idiomatic APIs for each language. SQLite also provides a
+command-line interface, which can be used to directly read from and modify a
+database with SQL statements.
 
 \subsection{SQLite from Rust}
 Accessing SQLite from Rust can be done through the excellent \code{Rusqlite}
@@ -762,13 +773,13 @@ log-structured merge trees~\cite{lsm} (LSM-trees), avoiding the need for random
 writes to persistent storage altogether.
 
 Writes are initially only written to a persistent write-ahead log (WAL) and
-in-memory data structures referred to as memtables. Later these memtables are
+in-memory data structures referred to as memtables. Later, these memtables are
 flushed to their equivalent data structures on disk, Static Sorted Tables (SST).
 The latter is done by background threads, allowing regular processing to
-continue without getting backed by slow writes to persistent storage. Both of
-these components originate in Patrick O'Neil's original paper on LSM-trees,
-where the in-memory data structure is referred to as $ C_0 $, and the on-disk
-structures $ C_{1..n} $.
+continue without getting blocked by slow writes to persistent storage. Both of
+these components originate in Patrick O'Neil's original paper on
+LSM-trees~\cite{lsm}, where the in-memory data structure is referred to as $ C_0
+$, and the on-disk structures $ C_{1..n} $.
 
 % TODO:
 % * Calling into RocksDB (C-API, rust-rocksdb)
@@ -799,17 +810,17 @@ it, data in memtables would be lost at the event of a crash. By default, every
 possibility of waiting for the write to be fully synchronized to the WAL before
 returning.
 
-Each memtable corresponds to a WAL-file, which is marked as obsolete obsolete
-when the memtable has been safely persisted to disk. Each WAL-file includes a
-sequence number, and the files are iterated through in order during recovery.
-The WAL itself is built up of a sequence of records, where each record includes
-a cyclic redundancy check (CRC) computed hash over the payload to maintain
+Each memtable corresponds to a WAL-file, which is marked as obsolete when the
+memtable has been safely persisted to disk. Each WAL-file includes a sequence
+number, and the files are iterated through in order during recovery. The WAL
+itself is built up of a sequence of records, where each record includes a
+computed cyclic redundancy check hash over the payload, to maintain
 integrity~\cite{rocksdb-wal}.
 
-Optionally, the WAL can be written to a different directory than the regular
-database files. This is essential for production systems that want to maintain a
-high write throughput: compactions and memtable flushes can then utilize the
-full disk capacity without slowing down the throughput of WAL writes. Even more
+Optionally, the WAL can be written to a different disk than the regular database
+files. This is essential for production systems that want to maintain a high
+write throughput: compactions and memtable flushes can then utilize the full
+disk capacity without slowing down the throughput of WAL writes. Even more
 drastically, the database files could be written to faster, volatile storage,
 relying solely on never-archived WAL-files for (albeit much slower) recovery.
 
@@ -831,7 +842,7 @@ db.write(batch, &opts);
 \code{Put} operations can also be batched into a \code{WriteBatch} (as shown in
 listing~\ref{lst:write-batch}), to amortize the cost of synchronizing the WAL
 over a larger amount of write operations. This is an atomic operation: either
-all the writes in the write batch succeeds, or none do.
+all the writes in the write batch succeed, or none do.
 
 \subsection{Basic operations}
 Akin to other key-value databases, RocksDB offers a familiar API of
@@ -841,23 +852,24 @@ sequential: subsequent \code{Put} operations of the same key never backtrack and
 overwrite existing keys, and deletions insert tombstone markers to avoid having
 to randomly read and mutate previously written values.
 
-Whereas both memtables and SS-tables are sorted, each tree structure might
-overlap with another. This is a result of the immutability property, and newly
-created SS-tables might contain key ranges already included in existing
-structures. This means that read operations in RocksDB, and other LSM-tree based
-storage systems, have to iterate through each tree structure---starting with the
-memtables---in an attempt to find the key in question. Reads within each sorted
-tree structure can be done in $ O(\log n) $ through a binary search.
-
-Going through a potentially large amount of SS-tables on disk is costly however,
-and RocksDB employs a series of tricks to avoid doing so.
+Whereas both memtables and SS-tables are sorted, each tree structure has the
+possibility of overlapping with another. This is a result of the immutability
+property, and newly created SS-tables might contain key ranges already included
+in existing structures. This means that read operations in RocksDB, and other
+LSM-tree based storage systems, have to iterate through each tree
+structure---starting with the memtables---in an attempt to find the key in
+question. Reads within each sorted tree structure can be done in $ O(\log n) $
+through a binary search. Going through a potentially large amount of SS-tables
+on disk is costly however, and RocksDB employs a series of tricks to avoid doing
+so.
 
 \subsection{Compactions}\label{sec:compactions}
+
 To maintain immutability, new SS-tables are always created without modifying
 existing on-disk content. Two writes to the same key can thus co-exist in
 different SS-tables, even if only the last written key is relevant to the
-system. This is quite wasteful, and would overtime lead to worse and worse read
-performance. The original LSM-paper~\cite{lsm} solves this through
+system. This is quite wasteful, and would lead to worse and worse read
+performance over time. The original LSM-paper~\cite{lsm} solves this through
 \textit{merging} existing LSM-trees into new ones at regular intervals. RocksDB
 does so in background threads, where it is referred to as \textit{compaction}.
 
@@ -882,21 +894,22 @@ on. Unlike LevelDB, RocksDB also supports doing compactions in parallel, as long
 as there are enough available background threads to do so.
 
 \subsection{Bloom filters}\label{sec:bloom}
+
 Iterating through every SS-table available to find a single key is inefficient.
 Instead, we would like to ask the question ``can this key possibly exist here?''
 for each of the SS-tables we go through, and only operate on the ones where the
-answer is ``yes''. With a regular hash based data structure this would be quite
-costly in terms of space, as we would need to maintain such a structure for
-every SS-table in our database. Instead, RocksDB, and many other systems like
-it, rely on a probabilistic data structure known as a bloom filter~\cite{bloom}
-to do so.
+answer is affirmative. With a regular hash based data structure this would be
+quite costly in terms of space, as we would need to maintain such a structure
+for every SS-table in our database. Instead, RocksDB, and many other systems
+like it, rely on a probabilistic data structure known as a bloom
+filter~\cite{bloom} to do so.
 
 Instead of knowing with 100\% certainty whether a key exists in a set, a bloom
 filter would let us know if that key \textit{might possibly} be in the set, or
-if it is \textit{definitely} not. The third option, of possibly \textit{not}
-being in the set is impossible. The positive trade-off here is that it uses
-significantly less space, opening the possibility of using it for every SS-table
-in the system.
+if it is \textit{definitely} not. The third option, of \textit{possibly not}
+being in the set, is impossible. The positive trade-off here is that it uses
+significantly less space, allowing it to be used for every SS-table in the
+system.
 
 \subsection{Iteration}
 One of the essential features of RocksDB compared to other key-value stores is
@@ -961,7 +974,7 @@ RocksDB provides two hash based MemTable factories, where keys are organized in
 buckets based on their extracted \textit{prefix}. This implies that the hash
 based implementations are only usable when a prefix extractor is defined, and
 that they only support efficient iterations within a specific prefix. At the
-same time the hash based implementations are also considerably more efficient
+same time, the hash based implementations are also considerably more efficient
 when that is the case, providing $ O(\log k) $ performance, where $ k $ is the
 number of keys within a specific prefix (which is often quite low).
 
@@ -974,9 +987,9 @@ collision resolution, and maintains close to constant time performance
 guarantees as long as the elements in each bucket is kept low. This comes with
 significantly lower memory overhead compared to the skip list based hash table,
 but with naturally lower performance when the amount of keys per prefix starts
-to grow. Because of this the buckets in a \code{HashLinkList} are implicitly converted
-to a skip list when its element count exceeds a certain threshold (256 by
-default).
+to grow. Because of this, the buckets in a \code{HashLinkList} are implicitly
+converted to a skip list when its element count exceeds a certain threshold (256
+by default).
 
 \subsubsection{Vector}
 
@@ -1007,15 +1020,16 @@ keys into separate buckets. This also limits seek-based iteration to a single
 prefix.
 
 \subsection{RocksDB from Rust}\label{sec:rust-rocksdb}
-While RocksDB is written in C++ it provides a separate API through its
+While RocksDB is written in C++, it provides a separate API through its
 C-bindings, which are used to call into it from a variety of different
 languages\furl{https://github.com/facebook/rocksdb/blob/master/LANGUAGE-BINDINGS.md}.
 
 % TODO: ref to appendix?
 % TODO: ref to ffi section
 This thesis makes use of a modified version of
-\textbf{rust-rocksdb}\furl{https://github.com/spacejam/rust-rocksdb}, which exposes a Rust-friendly
-API that eventually calls into the C-bindings.
+\code{rust-rocksdb}\furl{https://github.com/spacejam/rust-rocksdb}, which
+exposes a Rust-friendly API that eventually calls into the C-bindings. The
+majority of the modifications are listed in appendix A.
 
 \begin{listing}[H]
   \begin{minted}[frame=lines]{rust}

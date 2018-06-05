@@ -51,14 +51,14 @@ problem, while reducing Soup's overall memory usage.
 
 Storing base tables on durable storage also improves Soup's recovery situation,
 by avoiding the need to replay the entire write-ahead log after failures. With
-all updates safely persisted and readily available from durable storage,
+all updates safely persisted to and readily available from durable storage,
 recovery is instead a matter of replaying data from the base tables when needed.
 
 \section{Snapshotting materialized views}
 
 With durable base tables, Soup recovers significantly faster than by having to
 replay the entire write-ahead log. This is not without downside however: whereas
-log-based recovery brings \textit{all} nodes in the data-flow graph back to a
+log-based recovery brings all nodes in the data-flow graph back to a
 pre-failure state, durable base tables leave partial nodes empty, resulting in a
 latency penalty for initial read-queries. Instead, we would like to periodically
 write \textit{snapshots} of the materialized state at each node to durable
