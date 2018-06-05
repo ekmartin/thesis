@@ -379,235 +379,6 @@ are forwarded to an appropriate Soup worker for execution.
 
 % TODO: maybe write a little more
 
-\section{\code{bincode}}\label{sec:bincode}
-
-\code{bincode}~\cite{bincode} is a binary serialization library, used heavily
-throughout both this thesis and in Soup, for everything from RPC
-communication to persisting data to durable storage. In short, \code{bincode} takes an
-arbitrary Rust object and turns it into a series of bytes---an encoded object.
-The size of the resulting byte stream is usually either less than, or the same
-as, the size of the source object. \code{bincode} builds on top of the
-\code{Serde}\furl{https://serde.rs/} serialization framework.
-
-As the encoded format is of relevance to later sections, we will briefly go
-through it here. Primitive values, such as numbers, are encoded directly using
-Rust's \code{Writer} trait, with a few exceptions:
-
-\begin{itemize}
-  \item \code{isize} and \code{usize} types, which have varying sizes depending
-    on the OS, are encoded as \code{i32} and \code{u64} correspondingly.
-  \item Strings are encoded as the tuple \code{(number of bytes, bytes)}, where
-    the former is a \code{u64} and the latter is a byte slice.
-\end{itemize}
-
-Compound types---enums, structs, vectors, and tuples---are encoded recursively,
-with each of their fields placed out in succession. With vector lengths not
-being determined at compile time, vectors are prefixed with a length field on
-the form of a \code{u64}. This is not necessary for the other compound types, as
-their sizes do not vary at runtime. An enum instance can represent multiple
-types, and is prefixed with a \code{u32} tag used to determine which
-enum variant it represents.
-
-\begin{listing}[H]
-  \begin{minted}[frame=lines]{rust}
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
-enum Number {
-    Positive(u64),
-    Negative(u64)
-}
-
-fn main() {
-    let values = vec![Number::Positive(3), Number::Negative(4)];
-    // This serializes as:
-    // vector length u64,
-    // + enum variant u32 + u64,
-    // + enum variant u32 + u64
-    // = u64, u32, u64, u32, u64
-    // = 32 bytes
-    let raw = bincode::serialize(&values).unwrap();
-    let deserialized: Vec<_> = bincode::deserialize(&raw).unwrap();
-
-    for (i, element) in values.into_iter().enumerate() {
-        assert_eq!(element, deserialized[i]);
-    }
-}
-  \end{minted}
-
-  \caption{\
-    Types implementing the \code{Serialize} and \code{Deserialize} traits can be
-    encoded and decoded using \code{bincode}.
-  }\label{lst:bincode}
-\end{listing}
-
-\section{Rust}
-
-Rust is an open-source systems programming language spearheaded by Mozilla,
-where it is used to build Servo---a next generation browser
-engine\furl{https://servo.org/}. Rust provides memory safety without the runtime
-overhead of \eg garbage collection, making it a suitable language for everything
-from embedded systems to web service backends.
-
-When choosing a programming language, developers are often forced to compromise
-between higher level abstractions and performance. Large and latency sensitivity
-projects like databases often opt for the latter through low-level languages
-like C, which avoid expensive runtime safety checks. Rust removes this dilemma
-altogether by providing developers with both the fine-tuned control and
-performance they are used to in low-level languages, while offering abstractions
-developers might be familiar with from interpreted languages.
-
-% TODO: avoid expensive runtime safety checks is a weird sentence
-
-\begin{listing}[H]
-  \begin{minted}[frame=lines]{rust}
-fn suffix(input: &mut String) {
-    input.push_str(" is a String!");
-}
-
-fn output(input: String) {
-    println!("Hello: {}", input);
-}
-
-fn main() {
-    // Construct a mutable String, from a string litteral (str):
-    let mut input = String::from("Hi!");
-    // Pass a mutable reference to suffix:
-    suffix(&mut input);
-    // Finally, move our input variable into the output function:
-    output(input);
-    // println!("This line would not compile: {}", input);
-}
-  \end{minted}
-  \caption{\
-    The example shows the basics of Rust's move semantics. The \texttt{input}
-    variable cannot be used after the call to \texttt{output()}, as it has been
-    \textit{moved} into the function.
-  }
-\end{listing}
-
-One of Rust’s key features is providing compile time safety both in terms of
-types and memory. The latter is done through an ownership model which lets
-developers program mostly without thinking about memory allocation and
-deallocation, without the lowered performance of using something like a garbage
-collector. Each variable in Rust is assigned one and only one owner, and the
-variable is deallocated when that owner goes out of scope.
-
-% TODO: write a little more here
-
-\subsection{Foreign Function Interface}\label{sec:ffi}
-
-Rust has excellent support for calling into C programs, which lets developers
-access the myriad of libraries written in C, together with C++ programs that
-provide C interfaces. To call external programs, developers define each external
-function in a \textit{foreign function
-interface}\furl{https://doc.rust-lang.org/book/first-edition/ffi.html}, through
-use of the \code{extern} keyword, which also supports linking to external
-libraries.
-
-\begin{listing}[H]
-  \begin{minted}[frame=lines]{rust}
-extern "C" {
-  fn rand() -> i32;
-}
-
-fn main() {
-  unsafe {
-    println!("Random number: {}", rand());
-  }
-}
-  \end{minted}
-  \caption{\
-    By defining \code{rand} from the C standard library as an external function,
-    we can call it from our Rust program.
-  }\label{lst:extern}
-\end{listing}
-
-Note that the call to \code{rand} in listing~\ref{lst:extern} needs
-to be wrapped in an \code{unsafe} block. While Rust can ensure the safety of
-\textit{Rust} code at compile time, it cannot not do so for third-party
-applications written in other languages. By introducing the \code{unsafe}
-keyword, the blocks of code the developer is forced to maintain the safety of is
-isolated to the smallest possible region.
-
-In the same manner, Rust supports defining an interface that can be called from
-other languages, such as C, as shown in listing~\ref{lst:call-extern}. This is
-especially useful for libraries that require functions as arguments, \eg callbacks.
-
-\begin{listing}[H]
-  \begin{minted}[frame=lines]{rust}
-#[no_mangle]
-pub extern "C" fn multiply(a: i32, b: i32) -> i32 {
-  a * b
-}
-  \end{minted}
-  \caption{\
-    The \code{multiply} functions can be called through the C-calling convention
-    by other programs. The \code{no\_mangle} pragma ensures the \code{multiply}
-    name stays unmodified by the compiler.
-  }\label{lst:call-extern}
-\end{listing}
-
-\section{Profiling}
-
-\subsection{CPU}
-
-A large part of application performance tuning comes down to figuring out which
-portion of a program is running slowly and why that is the case. Throughout
-this thesis that is accomplished using
-\code{perf}\furl{https://perf.wiki.kernel.org}---a profiling tool that helps us
-answer the question ``What is the CPU spending time on?''.
-
-\code{perf} collects information from both hardware counters and logical
-tracepoints. The latter is especially useful for recording call graphs of a
-program, which in turn lets us produce flame graphs like the one in
-figure~\ref{fig:flame-example}, using tools such as
-\code{FlameGraph}\furl{https://github.com/brendangregg/FlameGraph} and
-\code{FlameScope}\furl{https://github.com/Netflix/flamescope}. Flame graphs show
-time spent on the horizontal axis, while showing the call graph vertically.
-
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=\textwidth]{flame-example}
-  \caption{\
-    An example flame graph from events recorded using \code{perf}.
-  }\label{fig:flame-example}
-\end{figure}
-
-\subsection{Memory}
-
-% TODO: shitty sentence
-Memory leaks happen when we continually allocate memory without freeing it. This
-can easily happen in languages without dynamic memory allocation, when a
-programmer forgets to deallocate some portion of memory after using it. At the
-same time it can also happen in garbage collected languages, \eg when
-continuously attaching listener functions to an event system without regard for
-previous subscriptions. Rust's ownership system largely prevents issues of the
-first kind from happening---variables that go out of scope are deallocated
-automatically. Regardless, Rust supports calling into arbitrary C-programs (see
-section~\ref{sec:ffi}), where anything could happen.
-
-To profile memory leaks, the Valgrind
-Massif\furl{http://valgrind.org/docs/manual/ms-manual.html} heap profiler is
-used. Massif continuously takes snapshots of the heap, recording what memory is
-used for, and where that memory was allocated from. While this is subject to
-change in the future, current versions of Rust use the
-\code{jemalloc}\furl{http://jemalloc.net/} memory allocator instead of the
-system's default allocator. Unfortunately, memory profiling using Valgrind does
-not work well with \code{jemalloc}. To resolve this we can instead force Rust to
-use the system allocator, at least while profiling.
-
-\begin{listing}[H]
-  \begin{minted}[frame=lines]{rust}
-#![feature(alloc_system)]
-#![feature(global_allocator, allocator_api)]
-
-#[global_allocator]
-static ALLOC: std::alloc::System = std::alloc::System;
-  \end{minted}
-
-  \caption{Forcing Rust to use the system memory allocator makes it possible to
-  profile it using tools such as Valgrind Massif.}\label{lst:system-alloc}
-\end{listing}
-
 \section{SQLite}\label{sec:sqlite}
 SQLite~\cite{sqlite} is by far the most widely deployed database ever written.
 Used in everything from smart phones to cars, with an estimated user count in
@@ -763,7 +534,7 @@ RocksDB is an embedded key-value store optimized for modern flash storage.
 RocksDB started out at Facebook, with the goal of making a version of Google's
 LevelDB that performed well on modern hardware. Today, RocksDB is used at the
 heart of a wide variety of databases, such as CockroachDB~\cite{cockroach},
-MyRocks~\cite{myrocks} (Facebook's fork of MySQL) and TiDB~\cite{tidb}.
+MyRocks~\cite{myrocks} and TiDB~\cite{tidb}.
 
 Traditional B-tree based database systems are often faced with poor write
 performance as a result of random writes, which perform worse than sequential
@@ -1047,3 +818,234 @@ match db.get(key) {
 
   \caption{Simple example usage of rust-rocksdb}\label{lst:rocksdb-rust}
 \end{listing}
+
+\section{Rust}
+
+Rust is an open-source systems programming language spearheaded by Mozilla,
+where it is used to build Servo---a next generation browser
+engine\furl{https://servo.org/}. Rust provides memory safety without the runtime
+overhead of \eg garbage collection, making it a suitable language for everything
+from embedded systems to web service backends.
+
+When choosing a programming language, developers are often forced to compromise
+between higher level abstractions and performance. Large and latency sensitivity
+projects like databases often opt for the latter through low-level languages
+like C, which avoid expensive runtime safety checks. Rust removes this dilemma
+altogether by providing developers with both the fine-tuned control and
+performance they are used to in low-level languages, while offering abstractions
+developers might be familiar with from interpreted languages.
+
+% TODO: avoid expensive runtime safety checks is a weird sentence
+
+\begin{listing}[H]
+  \begin{minted}[frame=lines]{rust}
+fn suffix(input: &mut String) {
+    input.push_str(" is a String!");
+}
+
+fn output(input: String) {
+    println!("Hello: {}", input);
+}
+
+fn main() {
+    // Construct a mutable String, from a string litteral (str):
+    let mut input = String::from("Hi!");
+    // Pass a mutable reference to suffix:
+    suffix(&mut input);
+    // Finally, move our input variable into the output function:
+    output(input);
+    // println!("This line would not compile: {}", input);
+}
+  \end{minted}
+  \caption{\
+    The example shows the basics of Rust's move semantics. The \texttt{input}
+    variable cannot be used after the call to \texttt{output()}, as it has been
+    \textit{moved} into the function.
+  }
+\end{listing}
+
+One of Rust’s key features is providing compile time safety both in terms of
+types and memory. The latter is done through an ownership model which lets
+developers program mostly without thinking about memory allocation and
+deallocation, without the lowered performance of using something like a garbage
+collector. Each variable in Rust is assigned one and only one owner, and the
+variable is deallocated when that owner goes out of scope.
+
+% TODO: write a little more here
+
+\subsection{Foreign Function Interface}\label{sec:ffi}
+
+Rust has excellent support for calling into C programs, which lets developers
+access the myriad of libraries written in C, together with C++ programs that
+provide C interfaces. To call external programs, developers define each external
+function in a \textit{foreign function
+interface}\furl{https://doc.rust-lang.org/book/first-edition/ffi.html}, through
+use of the \code{extern} keyword, which also supports linking to external
+libraries.
+
+\begin{listing}[H]
+  \begin{minted}[frame=lines]{rust}
+extern "C" {
+  fn rand() -> i32;
+}
+
+fn main() {
+  unsafe {
+    println!("Random number: {}", rand());
+  }
+}
+  \end{minted}
+  \caption{\
+    By defining \code{rand} from the C standard library as an external function,
+    we can call it from our Rust program.
+  }\label{lst:extern}
+\end{listing}
+
+Note that the call to \code{rand} in listing~\ref{lst:extern} needs
+to be wrapped in an \code{unsafe} block. While Rust can ensure the safety of
+\textit{Rust} code at compile time, it cannot not do so for third-party
+applications written in other languages. By introducing the \code{unsafe}
+keyword, the blocks of code the developer is forced to maintain the safety of is
+isolated to the smallest possible region.
+
+In the same manner, Rust supports defining an interface that can be called from
+other languages, such as C, as shown in listing~\ref{lst:call-extern}. This is
+especially useful for libraries that require functions as arguments, \eg callbacks.
+
+\begin{listing}[H]
+  \begin{minted}[frame=lines]{rust}
+#[no_mangle]
+pub extern "C" fn multiply(a: i32, b: i32) -> i32 {
+  a * b
+}
+  \end{minted}
+  \caption{\
+    The \code{multiply} functions can be called through the C-calling convention
+    by other programs. The \code{no\_mangle} pragma ensures the \code{multiply}
+    name stays unmodified by the compiler.
+  }\label{lst:call-extern}
+\end{listing}
+
+\section{\code{bincode}}\label{sec:bincode}
+
+\code{bincode}~\cite{bincode} is a binary serialization library, used heavily
+throughout both this thesis and in Soup, for everything from RPC
+communication to persisting data to durable storage. In short, \code{bincode} takes an
+arbitrary Rust object and turns it into a series of bytes---an encoded object.
+The size of the resulting byte stream is usually either less than, or the same
+as, the size of the source object. \code{bincode} builds on top of the
+\code{Serde}\furl{https://serde.rs/} serialization framework.
+
+As the encoded format is of relevance to later sections, we will briefly go
+through it here. Primitive values, such as numbers, are encoded directly using
+Rust's \code{Writer} trait, with a few exceptions:
+
+\begin{itemize}
+  \item \code{isize} and \code{usize} types, which have varying sizes depending
+    on the OS, are encoded as \code{i32} and \code{u64} correspondingly.
+  \item Strings are encoded as the tuple \code{(number of bytes, bytes)}, where
+    the former is a \code{u64} and the latter is a byte slice.
+\end{itemize}
+
+Compound types---enums, structs, vectors, and tuples---are encoded recursively,
+with each of their fields placed out in succession. With vector lengths not
+being determined at compile time, vectors are prefixed with a length field on
+the form of a \code{u64}. This is not necessary for the other compound types, as
+their sizes do not vary at runtime. An enum instance can represent multiple
+types, and is prefixed with a \code{u32} tag used to determine which
+enum variant it represents.
+
+\begin{listing}[H]
+  \begin{minted}[frame=lines]{rust}
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+enum Number {
+    Positive(u64),
+    Negative(u64)
+}
+
+fn main() {
+    let values = vec![Number::Positive(3), Number::Negative(4)];
+    // This serializes as:
+    // vector length u64,
+    // + enum variant u32 + u64,
+    // + enum variant u32 + u64
+    // = u64, u32, u64, u32, u64
+    // = 32 bytes
+    let raw = bincode::serialize(&values).unwrap();
+    let deserialized: Vec<_> = bincode::deserialize(&raw).unwrap();
+
+    for (i, element) in values.into_iter().enumerate() {
+        assert_eq!(element, deserialized[i]);
+    }
+}
+  \end{minted}
+
+  \caption{\
+    Types implementing the \code{Serialize} and \code{Deserialize} traits can be
+    encoded and decoded using \code{bincode}.
+  }\label{lst:bincode}
+\end{listing}
+
+
+\section{Profiling}
+
+\subsection{CPU}
+
+A large part of application performance tuning comes down to figuring out which
+portion of a program is running slowly and why that is the case. Throughout
+this thesis that is accomplished using
+\code{perf}\furl{https://perf.wiki.kernel.org}---a profiling tool that helps us
+answer the question ``What is the CPU spending time on?''.
+
+\code{perf} collects information from both hardware counters and logical
+tracepoints. The latter is especially useful for recording call graphs of a
+program, which in turn lets us produce flame graphs like the one in
+figure~\ref{fig:flame-example}, using tools such as
+\code{FlameGraph}\furl{https://github.com/brendangregg/FlameGraph} and
+\code{FlameScope}\furl{https://github.com/Netflix/flamescope}. Flame graphs show
+time spent on the horizontal axis, while showing the call graph vertically.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{flame-example}
+  \caption{\
+    An example flame graph from events recorded using \code{perf}.
+  }\label{fig:flame-example}
+\end{figure}
+
+\subsection{Memory}
+
+% TODO: shitty sentence
+Memory leaks happen when we continually allocate memory without freeing it. This
+can easily happen in languages without dynamic memory allocation, when a
+programmer forgets to deallocate some portion of memory after using it. At the
+same time it can also happen in garbage collected languages, \eg when
+continuously attaching listener functions to an event system without regard for
+previous subscriptions. Rust's ownership system largely prevents issues of the
+first kind from happening---variables that go out of scope are deallocated
+automatically. Regardless, Rust supports calling into arbitrary C-programs (see
+section~\ref{sec:ffi}), where anything could happen.
+
+To profile memory leaks, the Valgrind
+Massif\furl{http://valgrind.org/docs/manual/ms-manual.html} heap profiler is
+used. Massif continuously takes snapshots of the heap, recording what memory is
+used for, and where that memory was allocated from. While this is subject to
+change in the future, current versions of Rust use the
+\code{jemalloc}\furl{http://jemalloc.net/} memory allocator instead of the
+system's default allocator. Unfortunately, memory profiling using Valgrind does
+not work well with \code{jemalloc}. To resolve this we can instead force Rust to
+use the system allocator, at least while profiling.
+
+\begin{listing}[H]
+  \begin{minted}[frame=lines]{rust}
+#![feature(alloc_system)]
+#![feature(global_allocator, allocator_api)]
+
+#[global_allocator]
+static ALLOC: std::alloc::System = std::alloc::System;
+  \end{minted}
+
+  \caption{Forcing Rust to use the system memory allocator makes it possible to
+  profile it using tools such as Valgrind Massif.}\label{lst:system-alloc}
+\end{listing}
+
