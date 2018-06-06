@@ -10,6 +10,8 @@ the features developed in this thesis have on Soup.
 
 \section{Hardware}
 
+% TODO: write something here
+
 \subsection{Server setup 1: SSD}\label{sec:server-1}
 
 Unless otherwise specified, benchmarks are run on Dell PowerEdge R430 server
@@ -26,11 +28,12 @@ instances\furl{https://aws.amazon.com/ec2/instance-types/}, typically with the
 workload generator running on a machine with a large number of cores and the
 Soup server itself running on a server with fewer and faster cores.
 
-When Soup needs access to fast durable storage, an \code{m4.10xlarge} is used
-for the clients and an \code{i3.4xlarge} is used for the Soup workers. The
-\code{m4.10xlarge} server uses an Intel Xeon E5-2686 CPU with 40 logical cores
-and 160 GB of RAM.\@ The \code{i3.4xlarge} uses the same CPU as the \code{m4},
-but is backed by NVMe SSDs capable of extremely high throughput I/O.
+When Soup needs access to fast durable storage, an \code{m4.10xlarge} instance
+is used for the clients and an \code{i3.4xlarge} instance is used for the Soup
+workers. The \code{m4.10xlarge} server uses an Intel Xeon E5-2686 CPU with 40
+logical cores and 160 GB of RAM.\@ The \code{i3.4xlarge} uses the same CPU as
+the \code{m4}, but is backed by NVMe SSDs capable of extremely high throughput
+I/O.
 
 \subsection{Server setup 3: EC2 RAM Disk}\label{sec:server-3}
 
@@ -102,6 +105,8 @@ portion of the benchmark focus on writing votes, where each vote is assigned to
 an article following a uniform distribution. The vote benchmark runs either
 locally against a single Soup instance, or against a cluster of Soup workers.
 
+% TODO: why this thesis only runs benchmarks on a single souplet
+
 \subsection{Open-loop}\label{sec:vote-open-loop}
 
 In a closed-loop benchmark, a new request is issued when the previous completes.
@@ -121,12 +126,12 @@ from the request is queued until it is processed by the system.
 
 \section{Replay}\label{sec:bench-replay}
 
-Part of the promise of Soup is to avoid expensive computation when reading
-queries, by moving most of the workload to the write portion of the system. Read
-queries trigger replays for keys initially, while later reads are served
-directly by partially materialized state later in the graph. This makes it
-difficult to reason about the read performance of Soup's base nodes, as only a
-small portion of reads are bound to be served by the base nodes at all.
+Part of the promise of Soup is to avoid expensive computations for reads, by
+moving most of the workload to the write portion of the system. Read queries
+trigger replays for keys initially, while later requests are served directly by
+partially materialized state further down the graph. This makes it difficult to
+reason about the read performance of Soup's base nodes, as only a small portion
+of reads are bound to be served by the base nodes at all.
 
 This is where the replay benchmark comes in. Instead of possibly reading the
 same keys multiple times, the replay benchmark ensures that each key is only

@@ -10,7 +10,7 @@ techniques in distributed systems, necessary for chapter~\ref{chap:recovery}.
 
 \newpage
 
-\section{Indexing}
+\section{Indexing}\label{sec:indexing}
 
 Index structures are used by databases to facilitate efficient retrieval. While
 a majority of traditional database systems maintain indices separate from the
@@ -54,11 +54,11 @@ memory, amortizing the disk write penalty across a batch of writes.
 AsterixDB~\cite{asterix-storage} recognizes the effectiveness of the LSM-tree
 approach, and applies the same technique to in-place update index structures.
 The process---which they refer to as LSM-ification---lets AsterixDB build
-secondary indices using data structures that generally perform better while
-doing so, \eg B-trees. While this is an interesting approach, on-disk data
-structures are far from trivial to implement, and additional data structures
-undoubtedly increase a system's overall complexity---even if the data structures
-are built on the same components.
+secondary indices using read optimized data structures, \eg B-trees. While this
+is an interesting approach, on-disk data structures are far from trivial to
+implement, and additional data structures undoubtedly increase a system's
+overall complexity---even if the data structures are built on the same
+components.
 
 % TODO: generally perform better while doing so
 
@@ -175,16 +175,15 @@ extra index data needs to be persisted to disk. In turn, it reduces read
 performance, as retrievals now need to consider every block available, even if
 only ends up reading a small subset.
 
-\section{Recovery}
+\section{Recovery}\label{sec:recovery}
 
-Database researchers observed early on that users needed a way of
-performing a series of operations as a unit, where the result would either be
-made available to concurrent users as one, or not at all~\cite{bernstein}---a
-transaction. At the same time, failures are inevitable in any system, and
-ensuring that the result of previously \textit{committed} transactions still
-remained after crashing was crucial. Together, these requirements formed
-a subset of the ACID~\cite{acid} principles (atomicity, consistency, isolation,
-and durability).
+Database researchers observed early on that users needed a way of performing a
+series of operations as a unit, where the result would either be made available
+to concurrent users as one, or not at all---a transaction~\cite{bernstein}. At
+the same time, failures are inevitable in any system, and ensuring that the
+result of previously \textit{committed} transactions still remained after
+crashing was crucial. Together, these requirements formed a subset of the
+ACID~\cite{acid} principles (atomicity, consistency, isolation, and durability).
 
 ARIES---Algorithms for Recovery and Isolation Exploiting
 Semantics~\cite{aries}---has in-large remained the gold standard in transaction
@@ -200,7 +199,7 @@ for high throughput processing at the price of increasing complexity.
 
 While the logging structure varies from implementation to implementation, the
 principle of a write-ahead log remains the same. By appending changes to a
-persistent log prior to writing the actual changes, we avoid the performance
+persistent log prior to updating index structures, we avoid the performance
 penalties of random writes to durable storage, while still ensuring durability
 in the face of a potential crash. To maintain atomicity for transactions, we
 also log enough information to either safely revert their changes, or fully
@@ -210,7 +209,7 @@ might slowly go away~\cite{mars, wbl}. Regardless, to build systems that perform
 well on hardware most users have access to---still in-large spinning and
 solid-state drives---the arguments in-favor of write-ahead logging still remain.
 
-\subsection{Recovery in main-memory databases}
+\subsection{Recovery in main-memory databases}\label{sec:mm-recovery}
 
 Traditional relational database systems were never built with the goal of
 storing entire datasets in main-memory. B-trees, concurrency control techniques,
@@ -302,21 +301,20 @@ presented a solution aimed at distributed systems using first-in first-out
 channels, with preserved message ordering, by solving two main issues: deciding
 when to take a snapshot, and which messages should be part of said snapshot.
 
-\begin{figure}
-\begin{displayquote}
-  ``\textit{The state-detection algorithm plays the role of a group of photographers
-observing a panoramic, dynamic scene, such as a sky filled with migrating birdsa
-scene so vast that it cannot be captured by a single photograph. The photographers
-must take several snapshots and piece the snapshots together to form a
-picture of the overall scene. The snapshots cannot all be taken at precisely the
-same instant because of synchronization problems. Furthermore, the photographers
-should not disturb the process that is being photographed; for instance,
-they cannot get all the birds in the heavens to remain motionless while the
-photographs are taken. Yet, the composite picture should be meaningful. The
-problem before us is to define “meaningful” and then to determine how the
-photographs should be taken.}''
-\end{displayquote}
-  \caption{Chandy and Lamport's description of the global snapshotting problem.}
+\begin{figure}[H]
+  \begin{displayquote}
+    ``\textit{The state-detection algorithm plays the role of a group of
+      photographers observing a panoramic, dynamic scene, such as a sky filled
+      with migrating birds---a scene so vast that it cannot be captured by a
+      single photograph. The photographers must take several snapshots and piece
+      the snapshots together to form a picture of the overall scene. The snapshots
+      cannot all be taken at precisely the same instant because of synchronization
+      problems. Furthermore, the photographers should not disturb the process that
+      is being photographed; for instance, they cannot get all the birds in the
+      heavens to remain motionless while the photographs are taken. Yet, the
+      composite picture should be meaningful. The problem before us is to define
+    “meaningful” and then to determine how the photographs should be taken.}''
+  \end{displayquote}
 \end{figure}
 
 Chandy-Lamport's key insight was to introduce a marker message, used as a

@@ -273,7 +273,7 @@ readers with an atomic swap.
 
 % TODO: maybe write a little more about the readers here
 
-\subsection{Architecture}
+\subsection{Architecture}\label{sec:soup-architecture}
 
 \todo{figure}
 
@@ -563,7 +563,7 @@ memtable---which is later flushed to disk at the point of filling up. Both the
 size and the number of memtables can be configured at runtime.
 
 RocksDB's default memtable implementation is a skiplist, with an $ O(\log n) $
-bound on inserts, searches and deletes. This can be changed to a series of hash
+bound on inserts, searches, and deletes. This can be changed to a series of hash
 based implementations, which offer better performance if all operations are done
 within a pre-specified key prefix.
 
@@ -658,11 +658,11 @@ they might have deleted.
 In RocksDB, compactions are triggered when the previous \textit{level} reaches a
 certain size. Referred to as \textit{leveled compaction}, this was one of the
 original contributions of LevelDB\@. As described in~\cite{rocksdb-compaction},
-this is usually initiated when the amount of SS-tables at the first level, level
-0, goes beyond a certain amount. This in turn might cause the next level to go
-beyond its size limit, resulting in a compaction to the next level again, and so
-on. Unlike LevelDB, RocksDB also supports doing compactions in parallel, as long
-as there are enough available background threads to do so.
+compactions are usually initiated when the SS-table count at the first level,
+level 0, goes beyond a certain amount. This in turn might cause the next level
+to go beyond its size limit, resulting in a compaction to the next level again,
+and so on. Unlike LevelDB, RocksDB also supports doing compactions in parallel,
+as long as there are enough available background threads to do so.
 
 \subsection{Bloom filters}\label{sec:bloom}
 
@@ -724,7 +724,7 @@ argument.
 \subsection{Customizing the MemTable implementation}\label{sec:memtable-impl}
 
 RocksDB provides multiple implementations of its in-memory
-MemTables\furl{https://github.com/facebook/rocksdb/wiki/MemTable}, which can be
+MemTable\furl{https://github.com/facebook/rocksdb/wiki/MemTable}, which can be
 changed between through \textit{factories}. Different implementations have
 different advantages and disadvantages, with the default being the all around
 safest choice.
@@ -799,7 +799,7 @@ languages\furl{https://github.com/facebook/rocksdb/blob/master/LANGUAGE-BINDINGS
 % TODO: ref to ffi section
 This thesis makes use of a modified version of
 \code{rust-rocksdb}\furl{https://github.com/spacejam/rust-rocksdb}, which
-exposes a Rust-friendly API that eventually calls into the C-bindings. The
+exposes a Rust-friendly API that calls into the C-bindings. The
 majority of the modifications are listed in appendix A.
 
 \begin{listing}[H]
@@ -819,7 +819,7 @@ match db.get(key) {
   \caption{Simple example usage of rust-rocksdb}\label{lst:rocksdb-rust}
 \end{listing}
 
-\section{Rust}
+\section{Rust}\label{sec:rust}
 
 Rust is an open-source systems programming language spearheaded by Mozilla,
 where it is used to build Servo---a next generation browser

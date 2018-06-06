@@ -6,7 +6,7 @@ further down in the graph might be \textit{partial}, the base nodes always
 contain every single record a Soup application has seen through its lifetime.
 This is crucial in maintaining a balance between efficient read queries and
 space usage: popular queries will be handled by partial state further down the
-graph, while reads for in-frequently accessed rows will be able to refer all the
+graph, while reads for infrequently accessed rows will be able to refer all the
 way up to the source of truth, the base nodes, through what in Soup is called a
 replay. In comparison to existing database systems, base nodes are closest to
 what otherwise might be known as \textit{tables}.
@@ -18,8 +18,8 @@ what otherwise might be known as \textit{tables}.
   log.}
 \end{figure}
 
-While partial nodes can use \textit{eviction} (see~\ref{sec:eviction}) to keep
-their memory footprint low, the size of base nodes will continue to grow
+While partial nodes can use \textit{eviction} (see section~\ref{sec:eviction})
+to keep their memory footprint low, the size of base nodes will continue to grow
 unbounded throughout a Soup instance's lifetime. In the short term this can be
 handled by sharding Soup's data across multiple machines in a cluster, however
 this is infeasible in the long term: sustained write workloads would continue to
@@ -30,9 +30,9 @@ To combat this we would like to to move either parts of, or all of, the state
 stored in base nodes to durable storage. This would reduce Soup's overall memory
 usage, and perhaps even more significantly, transition Soup from a purely
 in-memory database to a system that can store more data than its available
-memory. With data safely persisted to base nodes, recovery after a failure would
-also require less work, as partial nodes could gradually recover when data is
-requested through replays. Summarized, introducing persistence to Soup's base
+memory. With data safely persisted to the base nodes, recovery after a failure
+would also require less work, as partial nodes could gradually recover when data
+is requested through replays. Summarized, introducing persistence to Soup's base
 nodes would achieve the following goals:
 
 \begin{enumerate}
@@ -53,15 +53,14 @@ fully materialized, this section will omit describing details regarding the
 former. The state data structure will be referred to as \code{State}.
 
 \subsection{Adding indices}
-The \code{State::add\_key} method introduces a new index to a specific \code{State} map,
-and takes a set of columns as its argument. Additional indices do not lead to
-multiple copies of the data, but rather contain pointers to the existing rows.
-These pointers are held in separate data structures however: each new index
-introduces a new hash map structure responsible for answering queries for that
-specific set of columns.
 
-New indices have to be \textbf{built}, as they are expected to answer queries
-for data that has already been inserted, right away.
+The \code{State::add\_key} method introduces a new index to a specific
+\code{State} map, and takes a set of columns as its argument. Additional indices
+do not lead to multiple copies of the data, but rather contain pointers to the
+existing rows. These pointers are held in separate data structures: each new
+index introduces a new hash map structure responsible for answering queries for
+that specific set of columns. New indices have to be \textit{built}, as they are
+expected to answer queries for data that has already been inserted, right away.
 
 \begin{listing}[H]
   \begin{minted}[frame=lines]{python}
@@ -90,22 +89,22 @@ assert_equal(state.lookup(1), [[A, 1], [B, 1]])
 
 A stateful map would not be useful without a method for retrieving data, which
 \code{State} provides through \code{State::lookup}. This takes a set of columns
-and a key as its arguments, and make use of a \textbf{single} index to retrieve
-one or more existing values. Each index is held in a separate hash map, and
-retrievals can thus be completed in constant time.
+and a key as its arguments, and make use of a single index to retrieve one or
+more existing values. Each index is held in a separate hash map, and retrievals
+can thus be completed in constant time.
 
-That \code{State::lookup} can return more than one value is an important
-distinction from most key-value stores, and is absolutely crucial in
-implementing secondary indices. Without it \code{State} would only be able to
+The fact that \code{State::lookup} can return more than one value is an
+important distinction from most key-value stores, and is absolutely crucial in
+implementing secondary indices. Without it, \code{State} would only be able to
 serve as an index structure for \textit{unique primary keys}.
 
 \subsubsection{Insertion}
 
 Naturally, to be able to read anything in the first place, we first need to
 insert data into our stateful data structure. This is done through the
-\code{State::insert} method, which takes a single row as its argument.
+\code{State::insert} method, which takes a single row as argument.
 \code{State::insert} is responsible for updating every index in \code{State},
-and has to loop through and insert a pointer for each included index.
+and has to loop through and insert pointers for each included index.
 
 \subsubsection{Removal}
 
@@ -113,7 +112,7 @@ Similar to insertions, removals have to update all indices. Contrary to what one
 might expect, \code{State::remove} takes a single row as argument, and not a
 key. This is due to how \code{State} is used in Soup: as an internal storage
 unit for partially and fully materialized nodes alike. While it might make sense
-for a base node to only delete rows by key, other nodes might need support for
+for a base node to only delete rows by key, other nodes need support for
 deleting a single row, regardless of if its key is unique or not. No matter,
 translating \code{remove(row)} to \code{remove(key)} is trivial, as shown in
 listing~\ref{lst:removals}.
@@ -139,6 +138,7 @@ record---to delete the existing row---followed by a positive one to insert the
 new value.
 
 \section{Requirements}\label{sec:requirements}
+
 Random access memory is, and has been for years now, fast. Durable storage is
 undergoing a similar transformation with the recent introduction of NVMe
 SSDs~\cite{nvme}, but is still orders of magnitudes slower than RAM.\@ This
@@ -148,30 +148,33 @@ Rather, the goal will be to maintain the existing performance characteristics,
 while still achieving our three main goals.
 
 \subsection{Write throughput}
+
 Backfills of missing state, replays, go through the regular update paths in the
 Soup data-flow graph. An increase in processing latency at the base nodes would
 not only reduce the write throughput, but also have a significant impact on
 reads that require a replay to complete.
 
 \subsection{Point query performance}
+
 Base node queries should be a seldom occurrence, as most queries should be
 served by nodes further down the graph. Still, when a query eventually makes it
 all the way up to the base nodes, it is important that it can be completed fast
 enough to not significantly slow down the total read throughput of the system.
-Slightly higher latency is on the other hand to be expected, we are after all
+Slightly higher latency is on the other hand to be expected, as we are after all
 comparing persistent storage to an in-memory hash map.
 
 \subsection{Support both primary and secondary indices}
+
 Similar to Soup's existing \code{State} implementation, a durable replacement
 has to support mapping a single key to multiple values, \ie secondary indices.
 
 \section{Embedding an existing storage engine}
+
 On-disk data structures have wildly varying performance characteristics. A
-B+tree (see~\ref{sec:btree}) might perform well on random reads, but get heavily
-out-performed by an LSM-tree (see~\ref{sec:rocksdb}) on sequential writes. At
+B+tree (see section~\ref{sec:btree}) might perform well on random reads, but get heavily
+out-performed by an LSM-tree (see section~\ref{sec:rocksdb}) on sequential writes. At
 the same time, decades of changes in hardware research have broadened the field
-even further. A new NVMe SSD is able to reach almost half a million random reads
-per
+further. A new NVMe SSD is able to reach almost half a million random reads per
 second\furl{http://www.samsung.com/semiconductor/minisite/ssd/product/consumer/ssd960/},
 whereas a traditional spinning disk barely scratches the surface of a
 hundred\furl{https://www.symantec.com/connect/articles/getting-hang-iops-v13}.
@@ -234,37 +237,37 @@ materialized---not base nodes. Similarly, some of the methods take in extra
 arguments related to partial state---omitted here.
 
 Comparing the trait in listing~\ref{lst:state} to the operations described
-in~\ref{sec:in-memory-state} you might notice that the insert and removal
+in~\ref{sec:in-memory-state} one might notice that the insert and removal
 operations are gone. These have been abstracted into a higher level method:
 \code{process\_records}. Every packet in Soup has the potential to contain more
-than one record by being a merged packet, due to \textit{group commit}
-(see~\ref{sec:group-commit}). Because of this, the function responsible for
+than one record by being a merged packet, due to \textit{group commit} (see
+section~\ref{sec:mm-recovery}). Because of this, the function responsible for
 materializing records in a node's \code{State} would go through a packet's
 records, individually calling methods like \code{State::insert} and
 \code{State::remove}. This is completely valid for an in-memory implementation,
 where each operation has the same cost---without any initial overhead. This is
-not the case for writes to potentially slower, durable storage. Here batching is
-key, and an indicator to the underlying methods that they can perform operations
-in one go is crucial.
+not the case for writes to potentially slower, durable storage. Here, batching
+is key, and an indicator to the underlying methods that they can perform
+operations in one go is crucial.
 
 \subsection{Ownership of data from \code{State}}
+
 While other languages might implement memory safety through garbage collection
 or manual memory management, Rust does the same through ownership, as described
-in~\ref{sec:rust}. Whenever a value goes out of scope, it is deallocated. How
-do you know when a value goes out of scope? In a garbage collected system, this
-happens when there are no longer any references to the value. In Rust, each
-value only has one owner, and any references need to live \textbf{at least} as
-long as the value created by that owner.
+in~\ref{sec:rust}. Whenever a value goes out of scope, it is deallocated. In a
+garbage collected system, this happens when there are no longer any references
+to the value. In Rust, each value only has one owner, and any references need to
+live \textbf{at least} as long as the value created by that owner.
 
-However, what if a value needs to be owned by more than one location? That is
-often the case for data structures, and \code{State} is no exception here.
-Values stored in \code{MemoryState} should not have to be cloned during
+On the other hand, values sometimes need to be owned by more than one location.
+This is often the case for data structures, and \code{State} is no exception
+here. Values stored in \code{MemoryState} should not have to be cloned during
 retrieval, which would incur a heavy performance penalty. Instead, retrieving
 values from \code{State} return dynamically reference
-counted\furl{https://doc.rust-lang.org/std/rc/index.html} values,
-allowing shared ownership of a single value by counting owners at runtime.
-Subsequent retrievals of the same value always point to the same memory
-location, with the source of truth being stored in \code{State}.
+counted\furl{https://doc.rust-lang.org/std/rc/index.html} values, allowing
+shared ownership of a single value by counting owners at runtime. Subsequent
+retrievals of the same value always point to the same memory location, with the
+source of truth being stored in \code{State}.
 
 \todo{add a figure showing the difference between retrieving rows from memory
 and from durable storage}
@@ -278,7 +281,7 @@ just created. While \code{MemoryState::lookup} would want to return a reference
 to an internally stored value, \code{PersistentState::lookup} would rather want
 to hand over ownership of the value to the caller. Enter the
 \code{Cow}\furl{https://doc.rust-lang.org/std/borrow/enum.Cow.html}
----a \textbf{clone-on-write} pointer from Rust's standard library that helps
+---a \textit{clone-on-write} pointer from Rust's standard library that helps
 with this exact purpose, by allowing data to be represented either as
 \code{Borrowed} in the case of \code{MemoryState} or \code{Owned} for
 \code{PersistentState}.
@@ -312,9 +315,9 @@ pub enum LookupResult<'a> {
   \end{minted}
   \caption{\
     Prior to the introduction of \code{PersistentState}, reads from \code{State}
-    would always result in a borrowed, reference counted value. Now that only
-    happens for reads from \code{MemoryState}---with \code{PersistentState} the
-    caller is responsible for retaining ownership of the value.
+    would always result in a borrowed, reference counted value. With
+    \code{PersistentState} the caller is instead responsible for retaining
+    ownership of the value.
   }\label{lst:existing-index}
 \end{listing}
 
@@ -344,16 +347,14 @@ if rows.len() > 0 {
   \end{minted}
   \caption{\
     With \code{RecordResult}, returned values can be either \code{Borrowed} or
-    \code{Owned}, making callers responsible for handling both use cases. Here
-    a negative record---used to signal to descendant nodes that this value
-    should be invalidated---is emitted using the first row as its value.
+    \code{Owned}, making callers responsible for handling both use cases.
   }\label{lst:cow}
 \end{listing}
 
 As is often the case, this can be simplified by looking at what the callers are
 actually using the returned values for. The unpacked \code{rows} variable in
 listing~\ref{lst:cow} is---as the name implies---a list of rows. Taking this
-collection, and \textit{iterating} over either all of, or a subset of, the rows,
+collection, and \textit{iterating} over either all of, or a subset of the rows,
 before returning a new iterator over the potentially modified values, was by far
 the most common operation. Instead of delegating the responsibility for doing so
 to the callers, this can be implemented on \code{RecordResult} itself, greatly
@@ -389,12 +390,12 @@ library for calling into SQLite from Rust.
 
 SQLite is an embedded database, and requires no inter-process communication to
 function. When persisting data, SQLite writes directly to durable files. This
-requires exclusive locks to be held while writing (see~\ref{sec:sqlite-locks}),
-eliminating the possibility of simultaneous updates from parallel locations to
-the same database. This is not an issue for Soup and \code{PersistentState}.
-Soup's \code{State} instances are completely standalone, and each
-\code{PersistentState} instance can operate against a separate SQLite database,
-avoiding the need for locks altogether.
+requires exclusive locks to be held while writing (see
+section~\ref{sec:sqlite-locks}), eliminating the possibility of simultaneous
+updates from parallel locations to the same database. This is not an issue for
+Soup and \code{PersistentState}. Soup's \code{State} instances are completely
+standalone, and each \code{PersistentState} instance can operate against a
+separate SQLite database, avoiding the need for locks altogether.
 
 SQLite---like SQL databases in general---require a strict schema to be defined
 at all times. How this schema looks is usually a result of what kind of queries
@@ -402,7 +403,7 @@ a database needs to respond to, which in Soup's case depends on the indices a
 specific \code{State} instance has been given responsibility for. Each column in
 a Soup index will be given a column in the SQLite table, allowing flexible read
 queries on any of the given indices. The row itself will be stored in a separate
-column, serialized using \code{bincode} (see~\ref{sec:bincode}).
+column, serialized using \code{bincode} (see section~\ref{sec:bincode}).
 
 \subsection{Adding indices}
 
@@ -439,13 +440,17 @@ After a series of inserts, our SQLite table for the base node's
 
 \subsection{Operations}
 
+This section describes how our \code{PersistentState} implementation translates
+its \code{State}-interface methods into operations on top of SQLite.
+
+
 \subsubsection{Retrieval}
 
 After the hard work of building the indices has completed, a myriad of rows is
 only a \code{SELECT}-statement away. \code{PersistentState::lookup} takes a set
 of columns and values for those columns as arguments, which are then translated
-a \code{SELECT}-query. Considering the example in our previous section, the key
-\code{(1, cat)} for the columns \code{(a, b)} would result in a query on the
+into a \code{SELECT}-query. Considering the example in our previous section, the
+key \code{(1, cat)} for the columns \code{(a, b)} would result in a query on the
 form of \code{SELECT row FROM store WHERE index\_0 = 1 AND index\_1 = "cat"},
 which SQLite can then complete in a timely manner due to the index on \code{(a,
 b)}.
@@ -453,7 +458,7 @@ b)}.
 \subsubsection{Insertion}
 
 Given a vector of values, \code{PersistentState} has to first extract the
-columns necessary for its current set of indices and so that their values can be
+columns necessary for its current set of indices, so that their values can be
 translated to SQLite friendly types. These can then be used to build an
 \code{INSERT}-query on the form of \code{INSERT INTO store (index\_0, index\_1,
 row) VALUES (\ldots)}, where \code{row} is a binary representation of the entire
@@ -469,15 +474,14 @@ WHERE index\_0 = 1 AND index\_1 = "cat"}.
 \subsubsection{Processing insertions and removals}
 
 All mutations need to be done within a transaction in SQLite, and operations
-performed without an explicit transactions are implicitly given one. Performing
-a single transaction is potentially expensive in SQLite, especially with strong
+performed without an explicit transaction are implicitly given one. Performing a
+single transaction is potentially expensive in SQLite given its strong
 durability guarantees, where each transaction will incur a \code{fsync}
 operation to make sure updates are successfully persisted before returning.
-
 Instead, \code{PersistentState} batches all mutations required for a single
 packet (per base node) into one transaction. This is done using the
 \code{State::process\_records} method described in~\ref{sec:trait}, as shown in
-listing~\ref{sec:process-sqlite}.
+listing~\ref{lst:process-sqlite}.
 
 \begin{listing}[H]
   \begin{minted}[frame=lines]{rust}
@@ -497,7 +501,6 @@ fn process_records(&mut self, records: &Records) {
     transaction.commit().unwrap();
 }
   \end{minted}
-
   \caption{Multiple insertions and removals are wrapped in a transaction.}\label{lst:process-sqlite}
 \end{listing}
 
@@ -505,7 +508,7 @@ fn process_records(&mut self, records: &Records) {
 \subsubsection{Counting rows}
 
 An accurate count of the total rows in the database can be retrieved using an
-SQL \code{COUNT}-query: \code{SELECT COUNT(row) FROM store}.
+SQL \code{COUNT}-query on the form of \code{SELECT COUNT(row) FROM store}.
 
 \subsection{Replacing the Soup write-ahead log}\label{sec:sqlite-vs-soup}
 
@@ -517,16 +520,15 @@ simply continue to grow unbounded. Relying on SQLite for durability would let
 Soup recover directly from SQLite's database files---a much faster operation
 than replaying the entire log.
 
-Modern SQLite versions make use of a write-ahead log to ensure durability
-(see~\ref{sec:sqlite-wal}) while maintaining high write performance. Relying on
-SQLite's WAL instead of Soup's requires some refactoring however: up until now
-Soup has sent out acknowledgments of writes as soon as the write is merged into
-a batch by the group commit protocol, prior to inserting the packet itself into
-Soup's data flow graph. Materialization into \code{PersistentState} happens
-after this on the other hand, while the packet is being processed by a base
-node. This comes with a minor write latency penalty regardless of the
-\code{State} implementation, as more work needs to happen before an
-acknowledgment can be sent.
+Modern SQLite versions make use of a write-ahead log to ensure durability (see
+section~\ref{sec:sqlite-wal}) while maintaining high write performance. Relying
+on SQLite's WAL instead of Soup's requires some refactoring however: up until
+now Soup has sent out acknowledgments of writes as soon as the write is merged
+into a batch by the group commit protocol, prior to inserting the packet itself
+into Soup's data flow graph. Materialization into \code{PersistentState} happens
+after later, while the packet is being processed by a base node. This comes with
+a minor write latency penalty regardless of the \code{State} implementation, as
+more work needs to happen before an acknowledgment can be sent.
 
 \begin{figure}[H]
   \centering
@@ -554,7 +556,7 @@ SQLite so much slower?
 With an arsenal of profiling tools at our disposal, guessing is unnecessary. A
 flame graph built from profiling data recorded with \code{perf} quickly
 highlights the two main culprits: checkpoints and B-tree updates. As mentioned
-in section~\ref{sec:sqlite-checkpoints}, SQLite automatically transfers data
+in section~\ref{sec:sqlite-wal}, SQLite automatically transfers data
 from the WAL to its main database file once the WAL exceeds a certain threshold.
 Checkpointing---similar to everything else in SQLite---is a synchronous
 operation, incurring a significant latency penalty once it happens. Regardless,
@@ -578,13 +580,12 @@ checkpoint manually after a certain amount of time, but \textit{after}
 acknowledging any outstanding writes. This had a minor effect on throughput,
 taking it from a measly 27k ops/s, to at least 42k ops/s---still far too slow.
 The checkpoints still happen synchronously, pausing processing at that specific
-\code{PersistentState} instance for a significant amount of time instance for a
-significant amount of time.
+\code{PersistentState} instance for a significant amount of time.
 
 That leads to the question of whether checkpoints have to happen in the same
 thread as regular processing altogether. The SQLite manual mentions the
 possibility of taking checkpoints in a separate thread, by incurring manual
-checkpoints using the \\ \code{sqlite3\_wal\_checkpoint\_v2} API.\@ While this
+checkpoints using the \\ \code{sqlite3\_wal\_checkpoint\_v2} method. While this
 sounds promising, it only helps if regular processing can continue while the
 checkpoint is being taken. SQLite describes four different checkpoint
 modes\furl{https://www.sqlite.org/c3ref/wal_checkpoint_v2.html}:
@@ -592,8 +593,8 @@ modes\furl{https://www.sqlite.org/c3ref/wal_checkpoint_v2.html}:
 \begin{itemize}
   \item \code{SQLITE\_CHECKPOINT\_PASSIVE}: Checkpoints as many frames as
     possible without taking any locks.
-  \item \code{SQLITE\_CHECKPOINT\_FULL}: Wait until any current database
-    operations are finished, then hold an exclusive write-lock while
+  \item \code{SQLITE\_CHECKPOINT\_FULL}: Waits until any current database
+    operations are finished, then holds an exclusive write-lock while
     checkpointing.
   \item \code{SQLITE\_CHECKPOINT\_RESTART}: Similar to the previous mode, but
     waits with finishing the checkpoint until all readers are accessing the
@@ -637,9 +638,9 @@ having to store base node state in memory.
 \subsubsection{Synchronization}
 
 Whereas the previous experiments ran with SQLite's \code{synchronous} option set
-to \code{FULL}---which ensures that all writes are safely persisted before
-returning---we will now make use of \code{synchronous = OFF} instead, which
-should significantly decrease write latency to SQLite.
+to \code{FULL}, which ensures that all writes are safely persisted before
+returning, we will now make use of \code{synchronous = OFF} instead, which
+should significantly decrease the latency of writing to SQLite.
 
 \subsubsection{Foregoing atomicity}
 
@@ -647,12 +648,12 @@ SQLite provides two main options to ensure atomicity: a rollback journal
 (section~\ref{sec:sqlite-locks}) and a write-ahead log
 (section~\ref{sec:sqlite-wal}). Whereas the previous section made use of the
 latter, we will now try a third option: no journal at all. Similar to
-\code{synchronous = OFF} this is far from safe in the event of crashing, but
-is altogether a more useful comparison while relying on Soup's WAL for
-durability. If this is still too slow, then chances are it is going to be hard
-to achieve our predefined requirements using SQLite no matter what.
+\code{synchronous = OFF}, this is far from safe in the event of crashing, but is
+altogether a more useful comparison while relying on Soup's WAL for durability.
+If this is still too slow, then chances are it is going to be hard to achieve
+our requirements using SQLite no matter what.
 
-\subsubsection{Results}
+\subsubsection{Intermediary results}
 
 Whereas our SQLite WAL experiment only reached about 40k writes/s, the current
 setup is at least able to push past 110k writes/s. While an improvement, this
@@ -668,8 +669,6 @@ is still far slower than Soup's regular write-ahead log.
   }\label{graph:sqlite-soup-log}
 \end{figure}
 
-\todo{could write about the (failed) attempt of batching more writes together}
-
 \subsubsection{Closing remarks}
 
 The fact that SQLite works well out of the box without a lot of tuning is
@@ -677,21 +676,19 @@ definitely one of its strengths. Regardless, there are a few options that can be
 tweaked, both ahead of compilation and at runtime. While disabling SQLite
 features not needed for \code{PersistentState} and removing all mutex code had a
 slight positive impact, the improvements were far from significant enough to
-make a solid dent in the total throughput.
-
-Maintaining SQLite indices---and thus randomly reading from and writing to
-disk---on the main path is simply too slow. Does this imply that directly
-maintaining B-tree on-disk index structures built specifically for Soup would
-perform poorly as well? Possibly. While SQLite does have a lot of overhead
-needed to support a wide range of features, and an even wider array of systems,
-profiling clearly shows that the bulk of processing time is spent interacting
-with durable storage as a result of B-tree maintenance.
+make a solid dent in the total throughput. Maintaining SQLite indices---and thus
+randomly reading from and writing to disk---on the main path is simply too slow.
+Does this imply that directly maintaining B-tree on-disk index structures built
+specifically for Soup would perform poorly as well? Possibly. While SQLite does
+have a lot of overhead needed to support a wide range of features, and an even
+wider array of systems, profiling clearly shows that the bulk of processing time
+is spent interacting with durable storage as a result of B-tree maintenance.
 
 \section{Persistent state with RocksDB}
 
 How do we improve upon SQLite's low write throughput? One option would be to
 only write to durable storage from background threads, avoiding the hit in
-latency that comes with writing to and reading from disk. Instead, writes to
+latency that comes from writing to disk. Instead, writes to
 \code{PersistentState} could fill up an in-memory queue structure, which would
 then later be flushed to persistent storage by background threads. Read
 operations could then retrieve data from both the in-memory queue and the
@@ -718,9 +715,10 @@ maintain a sorted key-value store, implementing support for secondary indices is
 more of a challenge than with SQLite, where support for both primary and
 secondary indices is built in. Building higher level abstractions on top of
 key-value stores is becoming more and more common however, with plenty of
-inspiration to be found in existing projects. Both CockroachDB~\cite{cockroach}
-and MyRocks~\cite{myrocks} implement SQL-like functionality on top of RocksDB,
-with sturdy indexing schemes at the core.
+inspiration to be found in existing projects, as described in
+section~\ref{sec:indexing}. Both CockroachDB~\cite{cockroach} and
+MyRocks~\cite{myrocks} implement SQL-like functionality on top of RocksDB, with
+sturdy indexing schemes at the core.
 
 Prior to describing the final implementation, let us first iterate our way
 towards a working index scheme. The next few sections describe separate,
@@ -803,7 +801,7 @@ This moves some of the work from writing to reading, as a read operation now has
 to find all merge operands and process them before returning. Unfortunately,
 this also introduces an unnecessary amount of serialization. RocksDB does not
 know how to deal with anything but byte streams, and so both the input and
-output to the merge operator has to be serialized, regardless of the fact that
+output to the merge operator have to be serialized, regardless of the fact that
 the final result will have to be deserialized again when read by the caller.
 This could potentially be improved through a smarter serialization scheme, where
 values could be appended to the serialized array without deserialization, but
@@ -830,8 +828,7 @@ country)}, with a primary index on \code{id} and a secondary index on
 \code{country}. Table~\ref{table:iteration} shows how the structured schema is
 converted to a flattened key-value space by inserting additional rows for each
 index. Notice that the keys for the primary index do not need any additional
-suffixes to ensure uniqueness---its keys are already considered unique among
-each other.
+suffixes to ensure uniqueness---its keys are already unique.
 
 \begin{table}[H]
   \centering
@@ -888,9 +885,11 @@ are potentially sub-par. Consider how an LSM-tree organizes its data: whereas
 each SS-table is sorted, separate files often overlap. This implies that an
 iterator has to consider every available file in its tree while iterating. To
 improve upon this, we can provide RocksDB with a way of partitioning out the
-areas that we want to iterate within, through use of \textit{prefix
-extractors}. In our case, these partitions are separate index keys, such as
-\code{norway} in the example shown in table~\ref{table:iteration}.
+areas that we want to iterate within, through use of \textit{prefix extractors}.
+In our case, these partitions are separate index keys, such as \code{norway} in
+the example shown in table~\ref{table:iteration}.
+
+% TODO: write better
 
 After defining a way of extracting these prefixes, RocksDB is free to organize
 its data to optimize for prefix iteration. While previously guaranteeing a total
@@ -906,7 +905,7 @@ prefix iteration, such as hash tables where each prefix is a key.
 What signifies a prefix varies wildly between different applications. Instead of
 attempting a generalization, RocksDB leaves the extraction up to developers,
 through what is referred to as a \textit{slice transform}: a function on the
-form of $ S \rightarrow S' $, where $ S $ is a slice and $ S' $ is a potentially
+form of $ S \rightarrow S' $, where $ S $ is a key and $ S' $ is a potentially
 modified version of $ S $. For \code{PersistentState}, $ S' $ corresponds to the
 original key, with any appended suffixes stripped away, as shown in
 table~\ref{table:prefix}.
@@ -957,7 +956,8 @@ PrefixTransform(raw_key):
   try:
     key, suffix = deserialize(raw_key)
   catch:
-    # raw_key might already have gone through a prefix transform (property 4):
+    # raw_key might already have gone through
+    # a prefix transform (property 4):
     return raw_key
 
   serialize(key)
@@ -966,21 +966,21 @@ PrefixTransform(raw_key):
   \caption{A naive implementation of a prefix transform.}\label{lst:naive-prefix}
 \end{listing}
 
-Deserializing the \textit{entire} key just to strip off the suffix requires an
+Deserializing the entire key just to strip off the suffix requires an
 unnecessary amount of allocations. In the current example the suffix is an
 integer sequence number, which we always know the byte size off, giving us the
-alternative of slicing away the last $ X $ bytes from the key to build a prefix.
-This would help maintain the three first prefix transformation properties, while
-failing the last: how do we ensure that we only slice away the last bytes once
-when performing $ prefix(prefix(key)) $? Additionally, as we will see in later
-sections, there are cases where we would like the suffix to have a variable byte
-size.
+alternative of slicing away the last $ X $ bytes from the key to build a prefix,
+where $ X $ is the size of our integer suffix. This would help maintain the
+three first prefix transformation properties, while failing the last: how do we
+ensure that we only slice away the last bytes once when performing $
+prefix(prefix(key)) $? Additionally, as we will see in later sections, there are
+cases where we would like the suffix to have a variable byte size.
 
 This leaves us with a requirement for a more generic solution, which we will
 solve by slightly worsening the space complexity of our key scheme, through the
-introduction of a \textit{size} segment. Consider a 64-bit integer primary key $
-X $, which bincode (see section~\ref{sec:bincode}) uses 12 bytes to serialize.
-By prefixing the key with the serialized size, 12, the slice transform knows how
+introduction of a \textit{size} segment. Consider a 64-bit integer primary key,
+which bincode (see section~\ref{sec:bincode}) uses 12 bytes to serialize. By
+prefixing the key with the serialized size, 12, the slice transform knows how
 many bytes correspond to the index value of the key, which it can then use to
 remove any suffix values.
 
@@ -1004,13 +1004,13 @@ PrefixTransform(raw_key):
 \end{listing}
 
 
-\subsection{Separating indices}
+\subsection{Separating indices}\label{sec:ensuring-uniqueness}
 
 The index scheme described so far has glossed over the potential for conflicts
 between indices covering the same amount of columns, with the same types.
-Consider a table with two integer columns---\code{(a, b)}---and an index on each
-column. How do you separate values pointed to by the index on \code{a} from
-values pointed to by the index on \code{b}? In the example shown in
+Consider a table with two integer columns, \code{(a, b)}, and an index on each
+column. How do you separate values pointed to by the index on column \code{a}
+from values pointed to by the index on \code{b}? In the example shown in
 table~\ref{table:colliding} this would lead to a conflict: both index \code{a}
 and index \code{b} have at least one key with the same value.
 
@@ -1036,8 +1036,9 @@ equivalent of a table. Whereas a secondary index might have a large amount of
 values prefix, a unique index can have only one. With the option of opening each
 column family with different options, indices can be tuned differently based on
 similar patterns. Keeping a separate column family per index also simplifies the
-rare case where all rows in the system have to be iterated through---all the
-values can be retrieved from the first index.
+rare case where all rows in the system have to be iterated through, as all the
+values can be retrieved from the first index, without having to filter out the
+pointers kept by other indices.
 
 \begin{table}[H]
   \centering
@@ -1079,7 +1080,7 @@ suffix to ensure uniqueness. This is shown in table~\ref{table:unique-suffix},
 where the secondary index on country includes the primary key as a suffix, to
 avoid collision. This also greatly speeds up the speed of removals: since
 secondary index keys can now be derived using the row and the primary key value,
-no retrievals are needed to remove rows.
+no unnecessary retrievals are needed to remove rows.
 
 \begin{table}[H]
   \centering
@@ -1093,7 +1094,7 @@ no retrievals are needed to remove rows.
   \end{tabular}
 
   \caption{\
-    The primary key---ID---is used as a suffix for the secondary index on
+    The primary key, ID, is used as a suffix for the secondary index on
     country to ensure that separate keys are unique.
   }\label{table:unique-suffix}
 \end{table}
@@ -1122,7 +1123,7 @@ number, as it is reset when recovering.
 
   \caption{\
     In this example the table has no unique primary key, and instead uses the
-    potentially duplicate \code{name} column for an initial index. Since
+    potentially duplicate \code{name} column as an initial index. Since
     \code{name} is not guaranteed to be unique, it is suffixed by a
     \code{(epoch, sequence number)} suffix.
     Secondary index keys are still suffixed with the entire key from the initial
@@ -1150,16 +1151,16 @@ a subsequent lookup of the primary key row, to avoid having to store the value
 multiple times. This opens for a completely empty value portion: the key
 already includes everything needed to retrieve the full row.
 
-A subsequent read for every secondary index lookup has the potential to be quite
-costly for large indices. With \code{PersistentState}'s iteration scheme, rows
-covered by the same index are co-located, opening for efficient caching behavior
-when a single secondary index key points to a large amount of rows. This is less
-of an improvement if each of the retrievals result in a second, and completely
-random, read. The second lookup has no such property and the values might be
-located anywhere. Other database systems often utilize a covering index: when
-all the columns needed exist in either the key portion of the primary or
-secondary index, no further reads are required. This is not possible for Soup,
-where nodes further down the query graph always require the full row
+An additional read for every secondary index lookup has the potential to be
+quite costly for large indices. With \code{PersistentState}'s iteration scheme,
+rows covered by the same index are co-located, opening for efficient caching
+behavior when a single secondary index key points to a large amount of rows.
+This is less of an improvement if each of the retrievals result in a second, and
+completely random, read. The second lookup has no such property and the values
+might be located anywhere. Other database systems often utilize a covering
+index: when all the columns needed exist in either the key portion of the
+primary or secondary index, no further reads are required. This is not possible
+for Soup, where nodes further down the query graph always require the full row
 representation.
 
 \begin{table}[H]
@@ -1197,14 +1198,16 @@ secondary index.
 
 \subsection{Operations}
 
+This section describes how the various \code{PersistentState} methods are
+implemented on top of the RocksDB storage engine.
+
 \subsubsection{Retrieval}
 
-The action needed to retrieve rows for a key depends on what kind of index the
-key represents. For unique primary key indices each key maps to a single row,
-where the row can be retrieved using a RocksDB \code{Get} operation. Other
-indices need to use a prefix iterator, as described in
-section~\ref{sec:prefix-iteration}, to ensure that all of the corresponding
-values are retrieved.
+The way retrieval is performed varies based on the index type. For unique
+primary key indices, each key maps to a single row, where the row can be
+retrieved using a RocksDB \code{Get} operation. Other indices need to use a
+prefix iterator, as described in section~\ref{sec:prefix-iteration}, to ensure
+that all of the corresponding values are retrieved.
 
 \begin{listing}[H]
   \begin{minted}[frame=lines]{python}
@@ -1259,12 +1262,12 @@ Insert(row):
 
 \subsubsection{Removal}
 
-Removals undo the work done by an insertion operation, through cleaning up rows
-for each index maintained by a \code{PersistentState} instance. Note that a
-removal in Soup is given the entire row, and not a key, with the expected out
-come that it will delete a \textit{single} value. This means that we need to
-take care to only remove that exact value---and any references to it---for
-non-unique indices.
+Removals undo the work done by an insertion operation, by cleaning up rows for
+each index maintained by a \code{PersistentState} instance. Note that a removal
+in Soup is given the entire row, and not a key, with the expected outcome that
+it will delete a \textit{single} value. This means that we need to take care to
+only remove that exact value---and any references to it---for non-unique
+indices.
 
 \begin{listing}[H]
   \begin{minted}[frame=lines]{python}
@@ -1300,7 +1303,7 @@ RocksDB, being a key-value store, does not have an equivalent of the
 would need to either maintain a separate variable (which would then need to be
 persisted potentially on every write), or iterate through the entire collection
 of rows---a potentially costly operation. RocksDB does on the other hand have an
-estimated internal property, \code{rocksdb.etimate-num-keys} which can be
+estimated internal property, \code{rocksdb.etimate-num-keys}, which can be
 retrieved trivially. At the moment, a total row count is only needed for
 debugging and statistical purposes in Soup, making an estimated count
 sufficient.
@@ -1318,20 +1321,20 @@ regular Soup, RocksDB still has to potentially write $ N  $ times more data to
 disk than Soup's regular WAL, where $ N $ is the amount of indices
 \code{PersistentState} maintains.
 
-To prevent synchronizing to durable storage more than what is necessary to
-retain Soup's durability guarantees, the records from a single packet result in
-a single \code{WriteBatch} (see section~\ref{sec:rocksdb-wal})---persisted once
-towards the end of \code{PersistentState::process\_records}.
+To prevent synchronizing to durable storage more than necessary, the records
+from a single packet result in a single \code{WriteBatch} (see
+section~\ref{sec:rocksdb-wal})---persisted once towards the end of
+\code{PersistentState::process\_records}.
 
 \subsection{Building new indices}
 
 Indices added after rows have already been inserted into \code{PersistentState}
-need to be \textit{built}, to ensure that they start serving reads for
-existing rows right away. This is done by iterating through all of the existing
-rows and inserting index pointers for each of them into the newly created column
-family. Finally, meta information about the index itself is persisted to RocksDB
-\textit{after} building the index, preventing recovery from trying to rebuild
-the index in the future.
+need to be \textit{built}, to ensure that they start serving reads for existing
+rows right away. This is done by iterating through all of the existing rows
+while inserting index pointers into the newly created column family. Finally,
+meta information about the index itself is persisted to RocksDB \textit{after}
+building the index, preventing recovery from trying to rebuild the index after a
+failure.
 
 \begin{listing}[H]
   \begin{minted}[frame=lines]{python}
@@ -1388,7 +1391,7 @@ recovery we can then check whether the index count corresponds to the column
 family count, and if it does not, simply drop the entire column family and
 rebuild the index again later.
 
-\subsection{Background Threads}
+\subsection{Background threads}
 
 With the exception of its write-ahead log, RocksDB first buffers writes to an
 in-memory MemTable before persisting data to durable storage. This comes with
