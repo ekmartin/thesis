@@ -23,21 +23,21 @@ single unit also reduces the number of packets to feed through the data-flow gra
 
 % TODO: bad sentence ^
 
-\subsection{Log based recovery}
+\subsection{Log based recovery}\label{sec:log-recovery}
 
 In a traditional relational database management system, log recovery often
 involves multiple phases. Following a system like ARIES (described in
-section~\ref{sec:aries}), log recovery is responsible for a wide variety of
+section~\ref{sec:recovery}), log recovery is responsible for a wide variety of
 tasks, such as undoing aborted transactions. Log recovery in Soup is much
-simpler, with log entries only including the actual operations to be performed
-(sometimes referred to as command logging~\cite{voltdb-recovery})---not the
-result they have on the database. There are no \code{UNDO} nor \code{REDO}
-phases either: only committed transactions result in persisted log entries.
+simpler, with log entries only including the operations to be performed, and not
+the result they have on the database---a \textit{command
+log}~\cite{voltdb-recovery}. There are no \code{UNDO} nor \code{REDO} phases
+either: only committed transactions result in persisted log entries.
 
-Log recovery is then a matter of replaying the writes from the persisted logs on
-start-up, by feeding them into the data-flow graph's base nodes as if they were
-regular updates. Each line in the log corresponds to a packet that was once
-injected into the Soup instance's data-flow graph, now serialized using JSON.\@
+Log recovery is then a matter of replaying the writes from the persisted logs by
+feeding them into the data-flow graph's base nodes as if they were regular
+updates. Each line in the log corresponds to a packet that was once injected
+into the Soup instance's data-flow graph, now serialized using JSON.\@
 
 \begin{listing}[H]
   \begin{minted}{json}
@@ -48,9 +48,8 @@ injected into the Soup instance's data-flow graph, now serialized using JSON.\@
 ]
   \end{minted}
   \caption{\
-    An expanded line from one of the log files of the example application from
-    section~\ref{sec:example}, corresponding to a single batched update with
-    three records.
+    An expanded line from one of the log files of a Soup application,
+    corresponding to a single batched update with three records.
   }\label{lst:log-entry}
 \end{listing}
 
@@ -77,8 +76,8 @@ RocksDB recovers content that resided in its in-memory MemTables at the time of
 a crash by replaying entries from its write-ahead log. This is a stark
 improvement from recovery using Soup's regular write-ahead log, where every
 entry from the beginning of time has to be replayed. Data that is already
-persisted to durable SS-tables at the time of a crash require no extra work---
-they can be read in the same manner after crashing as before.
+persisted to durable SS-tables at the time of a crash require no extra
+work---they can be read in the same manner after crashing as before.
 
 What happens to Soup's partially materialized nodes? Similar to a regular
 caching solution, they start out completely empty after recovering. Subsequent
@@ -122,7 +121,7 @@ of the entire graph simultaneously would mean capturing nodes at different
 logical points, as an update might be in the process of propagating throughout
 the graph at the time that the snapshot is initiated.
 
-Soup's way of asynchronously propagating updates through its query-graph
+Soup's way of asynchronously propagating updates through its data-flow graph
 resembles the communication done in a distributed system. Being able to observe
 the global state in a distributed system---where access to a common clock is
 rare---is an immensely useful property, crucial to resolving a certain category
@@ -130,31 +129,31 @@ of problems, such as deadlock detection and global checkpointing.
 Section~\ref{sec:rel-snapshotting} introduces a series of algorithms for
 snapshotting distributed systems, including the
 Chandy-Lamport~\cite{chandy-lamport} method of propagating an explicit snapshot
-marker throughout the system to ensure consistency---implemented later in this
-chapter.
+marker throughout the system to ensure consistency, which we implement later in
+this chapter.
 
 \subsection{Algorithm}
 
 Taking a snapshot of a running Soup instance requires persisting the content of
 each materialized node in the current data-flow graph. This needs to happen at
-the same logical point in time---ensuring that every in-flight update is either
-propagated to \textit{all} nodes in the graph---or none of them, leading
-to a consistent state after recovering from a failure. At the same time, taking
-a snapshot should not incur a too heavy performance cost on the running system,
-and should definitely not stop the system from processing updates
-completely---for any period of time. This lets us derive a few base rules for
-our snapshotting algorithm:
+the same logical point in time across the graph---ensuring that every in-flight
+update is either propagated to \textit{all} nodes in the graph---or none of
+them, leading to a consistent state after recovering from a failure. At the same
+time, taking a snapshot should not incur a too heavy performance cost on the
+running system, and should definitely not stop the system from processing
+updates completely---for any period of time. This lets us derive a few base
+rules for our snapshotting algorithm:
 
 \begin{enumerate}
   \item Snapshots need to include exactly the same updates across the graph.
-  \item Snapshotting should not significantly degrade the system's throughput.
+  \item Snapshots should not significantly degrade the system's throughput.
   \item Snapshots should complete in a reasonable amount of time.
 \end{enumerate}
 
 We can then use these rules to build a snapshotting algorithm in incremental
 steps, starting from an example that fails to meet the defined criteria.
-Figure~\ref{fig:bad-example} shows an update propagating through the Soup query
-graph. What would be the outcome if both of the partially materialized
+Figure~\ref{fig:bad-example} shows an update propagating through the Soup
+data-flow graph. What would be the outcome if both of the partially materialized
 nodes---shown in a blue color---would snapshot their state at the exact moment
 shown in the graph? Whereas the leftmost domain has had time to process update
 \code{A}, the rightmost one has not. The two domains are at different
@@ -219,13 +218,12 @@ InitializeSnapshot:
 \end{listing}
 
 Domains that receive a snapshot marker proceed with the snapshotting process
-immediately, without further processing of updates. After persisting the
-snapshot, nodes notify the controller that they have done so, letting it
-eventually discard log entries after confirming that all materialized nodes have
-successfully taken a snapshot of their state. Implemented naively, this would
-involve serializing each node's state at a domain and persisting these to
-disk---all while while blocking updates from the rest of the system (shown in
-listing~\ref{lst:naive}).
+immediately. After persisting the snapshot, nodes notify the controller that
+they have done so, letting it eventually discard log entries after confirming
+that all materialized nodes have successfully taken a snapshot of their state.
+Implemented naively, this would involve serializing each node's state at a
+domain and persisting these to disk---all while while blocking updates from the
+rest of the system (shown in listing~\ref{lst:naive}).
 
 
 \begin{listing}[H]
@@ -250,7 +248,7 @@ through use of Chandy-Lamport's marker technique, by stopping further domain
 processing until the snapshot has completed. This involves writing the snapshot
 to durable storage---a potentially slow operation. To prevent this from
 significantly slowing down the system's throughput we would need to persist the
-snapshot in a separate computational unit---such as a thread---allowing the
+snapshot in a separate computational unit, such as a thread, allowing the
 domain to continue its regular processing without pause.
 
 The algorithm shown in listing~\ref{lst:snapshot-worker} achieves this through a
@@ -339,8 +337,8 @@ TakeSnapshotDelayed:
 \subsubsection{Snapshot confirmations}
 
 The controller should be notified of all completed snapshots, as shown in
-listing~\ref{lst:snapshot-ack}. The snapshots are already persisted to disk
-prior to this, removing the need to include data in the acknowledgment messages.
+listing~\ref{lst:snapshot-ack}. The snapshots are already persisted to disk at
+this point, removing the need to include data in the acknowledgment messages.
 The messages should on the other hand include the current snapshot identifier,
 so that the controller eventually knows when the entire graph has completed the
 same snapshot. At that point the snapshot identifier can be persisted to
@@ -362,7 +360,7 @@ ReceiveSnapshotAck(domain_id, snapshot_id):
     \code{snapshot\_id} on each received confirmation. When all domains have
     completed their snapshots, the controller persists the
     \code{snapshot\_id}, so that it later on can be used for recovery.
-  }\label{snapshot_acks}
+  }\label{lst:snapshot-ack}
 \end{listing}
 
 
@@ -431,9 +429,9 @@ out of order at different domains.
 The snapshotting algorithm describes persisting the state of materialized nodes.
 Although that is true, reality is slightly more nuanced. Materialized nodes in
 Soup can be both internal and external, where the latter is represented by
-readers (see section~\ref{sec:soup-readers}). Both the internal nodes and the
-readers can be either partially or fully materialized, where only partial nodes
-require support from their parent nodes to fulfill certain queries.
+readers (see section~\ref{sec:soup-architecture}). Both the internal nodes and
+the readers can be either partially or fully materialized, where only partial
+nodes require support from their parent nodes to fulfill certain queries.
 
 Whether a node is partially or fully materialized does not make much of a
 difference for the snapshotting algorithm. On the other hand, internal and
@@ -456,11 +454,11 @@ When a domain has finished cloning the state of its materialized nodes, it
 notifies its local snapshot worker through an asynchronous and unbounded
 buffered
 \code{channel}\furl{https://doc.rust-lang.org/std/sync/mpsc/fn.channel.html}.
-This ensure that snapshot processing can continue separately, without blocking
+This ensures that snapshot processing can continue separately, without blocking
 the domain's regular workload. The snapshot workers receive and process
 \code{PersistSnapshotRequest} events one by one. The processing involves
-serializing the cloned state, persisting it disk, and finally notifying the
-controller of a domain's snapshot completion.
+serializing the cloned state, persisting the serialized state to disk, and
+finally notifying the controller of a domain's snapshot completion.
 
 \subsection{Receiving snapshots confirmations}
 
@@ -506,7 +504,7 @@ created prior to the snapshot being restored.
 
 The snapshot ID used for log annotations is the ID of the latest snapshot
 initiated at that domain, regardless if the global snapshot with that ID has
-finished yet or not---it is \textit{optimistic}. In the event of a failure any
+finished yet or not---it is \textit{optimistic}. In the event of a failure, any
 unfinished snapshots are simply ignored, and the log entries are relied on
 instead. As an example, consider a domain that is in the process of taking a
 snapshot with ID $ X $. A failure occurring after that domain has snapshotted,
@@ -524,12 +522,12 @@ ID is read from ZooKeeper, ensuring that it survives across failures.
 
 When the base node domains receive the recovery packets, they initialize the
 recovery process by first restoring snapshots, before replaying any updates that
-are left from log entries. Before this, the recovery packet is forwarded on to
-the rest of the graph. Unlike log based replays, snapshots have to be restored
-at each materialized node across the \textit{entire} graph---not solely at the
-base nodes. Forwarding the recovery packet prior to replaying log entries is
-crucial, as it ensures that snapshot recovery happens ahead of log based
-recovery for every node---not just the base nodes.
+are left from log entries. Before this, the recovery packet is forwarded to the
+rest of the graph. Unlike log based replays, snapshots have to be restored at
+each materialized node across the \textit{entire} graph---not solely at the base
+nodes. Forwarding the recovery packet prior to replaying log entries is crucial,
+as it ensures that snapshot recovery happens ahead of log based recovery for
+every node---not just the base nodes.
 
 \subsection{Serialization and deserialization of snapshots}
 
@@ -615,4 +613,21 @@ controllers.
 
 \subsection{Diamonds in the data-flow graph}
 
-\todo{}
+A single Soup node can receive multiple snapshot markers if at least two nodes
+have a common descendant in the data-flow graph. The snapshot implementation
+described so far immediately snapshots when a marker is received and ignores
+subsequently received snapshot markers. With packets propagating through the
+data-flow graph asynchronously, snapshotting after the first marker is received
+could produce inconsistent snapshots. Consider the case in
+figure~\ref{fig:diamond}, where the snapshot marker from node $ A $ arrives at $
+C $ ahead of the marker from $ B $. Snapshots performed when the marker from $ A
+$ arrives would not include the propagated update from $ B $, while delaying the
+snapshotting until the marker has arrived from $ B $ would potentially include
+update $ Y $ in the snapshot, breaking the properties defined by the
+Chandy-Lamport algorithm.
+
+% TODO: figure here (diamond)
+
+Instead, $ C $ should wait with snapshotting until it has received the marker
+from both of its parents, while blocking further updates from parents that it
+has already received the marker from.
