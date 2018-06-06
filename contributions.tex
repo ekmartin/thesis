@@ -1,11 +1,20 @@
 \chapter{Contributions}\label{chap:contributions}
 
+The implementations described throughout this thesis have resulted in a series
+of contributions to various open-source projects. This appendix lists a selected
+subset of the \textit{pull requests} contributed to these projects, where a pull
+request is simply a proposed unit of changes.
+
+\newpage
+
 \section{\code{distributary}}
+
+\code{distributary} is the prototype implementation of Soup, written in Rust.
 
 \begin{table}[H]
   \begin{tabular}{l l}
     \toprule
-    \textbf{Title} & \textbf{Pull Request}  \\ \midrule
+    \textbf{Title} & \textbf{Pull request}  \\ \midrule
     RocksDB Persistence & \url{https://git.io/vhf7w} (\#72) \\ \midrule
     SQLite Base Node Indices &
     \url{https://git.io/vhf7B} (\#58) \\ \midrule
@@ -24,30 +33,31 @@
     \bottomrule
   \end{tabular}
 
-  \caption{Selected contributions to the Rust prototype implementation of Soup,
-  distributary.}
 \end{table}
 
 \section{\code{distributary-mysql}}
 
+\code{distributary-mysql} is the MySQL protocol translation layer described in
+section~\ref{sec:mysql-shim}.
+
 \begin{table}[H]
   \begin{tabular}{l l}
     \toprule
-    \textbf{Title} & \textbf{Pull Request}  \\ \midrule
+    \textbf{Title} & \textbf{Pull request}  \\ \midrule
     \code{UPDATE} and \code{DELETE} support & \url{https://git.io/vhfdi} (\#12) \\
     \bottomrule
   \end{tabular}
-
-  \caption{Selected contributions to the MySQL shim described in
-  section~\ref{sec:mysql-shim}.}
 \end{table}
 
 \section{\code{nom-sql}}
 
+\code{nom-sql} is the SQL parser used by \code{distributary} and
+\code{distributary-mysql}, written in Rust.
+
 \begin{table}[H]
   \begin{tabular}{l l}
     \toprule
-    \textbf{Title} & \textbf{Pull Request}  \\ \midrule
+    \textbf{Title} & \textbf{Pull request}  \\ \midrule
     Add aliases to arithmetic expression & \url{https://git.io/vhf5D} (\#8) \\ \midrule
     Upgrade \code{nom} & \url{https://git.io/vhfdv} (\#13) \\ \midrule
     Move alias up to \code{FieldExpression} & \url{https://git.io/vhf5h} (\#15) \\ \midrule
@@ -56,29 +66,30 @@
     Implement \code{fmt::Display} \\ for \code{ArithmeticExpression} & \url{https://git.io/vhf5F} (\#12) \\
     \bottomrule
   \end{tabular}
-
-  \caption{Selected contributions to nom-sql, a Rust SQL parser.}
 \end{table}
 
 \section{\code{RocksDB}}
 
+\code{RocksDB} is the key-value store described in section~\ref{sec:rocksdb},
+which the durability layer in Soup is implemented on top of.
+
 \begin{table}[H]
   \begin{tabular}{l l}
     \toprule
-    \textbf{Title} & \textbf{Pull Request}  \\ \midrule
+    \textbf{Title} & \textbf{Pull request}  \\ \midrule
     Add manual WAL flushing to the C API & \url{https://git.io/vhfb8} (\#3792) \\
     \bottomrule
   \end{tabular}
-
-  \caption{Selected contributions to RocksDB, Facebook's key-value storage system.}
 \end{table}
 
 \section{\code{rust-rocksdb}}
 
+\code{rust-rocksdb} is a Rust wrapper library for \code{RocksDB}.
+
 \begin{table}[H]
   \begin{tabular}{l l}
     \toprule
-    \textbf{Title} & \textbf{Pull Request}  \\ \midrule
+    \textbf{Title} & \textbf{Pull request}  \\ \midrule
     Add support for customizing \\ the memtable factory & \url{https://git.io/vhfAV} (\#180) \\ \midrule
     Support linking to other \\ compression libraries & \url{https://git.io/vhfAg} (\#185) \\ \midrule
     Add \code{set\_memtable\_prefix\_ratio} & \url{https://git.io/vhfAE} (\#181) \\ \midrule
@@ -90,6 +101,4 @@
     Add \code{disable\_cache} method \\ to \code{BlockBasedOptions} & \url{https://git.io/vhfNC} (\#188) \\
     \bottomrule
   \end{tabular}
-
-  \caption{Selected contributions to rust-rocksdb, a Rust wrapper for RocksDB.}
 \end{table}
