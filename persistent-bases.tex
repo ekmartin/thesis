@@ -889,16 +889,15 @@ areas that we want to iterate within, through use of \textit{prefix extractors}.
 In our case, these partitions are separate index keys, such as \code{norway} in
 the example shown in table~\ref{table:iteration}.
 
-% TODO: write better
-
-After defining a way of extracting these prefixes, RocksDB is free to organize
-its data to optimize for prefix iteration. While previously guaranteeing a total
-order among all keys, RocksDB now only does so within a prefix. Bloom filters
-(see section~\ref{sec:bloom}) can then be defined on prefixes instead of
-individual keys, greatly reducing the amount of SS-tables that have to be
-considered when iterating. Additionally, developers can choose to replace
-RocksDB's fundamental LSM-tree structures with data structures optimized for
-prefix iteration, such as hash tables where each prefix is a key.
+With a defined way of extracting prefixes, RocksDB is free to organize data how
+it sees fit to optimize for prefix iteration. While iteration usually guarantees
+a total order, this guarantee is restricted to iteration within the same key
+when a prefix extractor is given. Bloom filters (see section~\ref{sec:bloom})
+can then be defined on prefixes instead of individual keys, greatly reducing the
+amount of SS-tables that have to be considered when iterating. Additionally,
+developers can choose to replace RocksDB's fundamental LSM-tree structures with
+data structures optimized for prefix iteration, such as hash tables where each
+prefix is a key.
 
 \subsubsection{Extracting a prefix}
 

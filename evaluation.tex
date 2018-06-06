@@ -37,7 +37,7 @@ both write new votes and read the existing vote counts of articles, we will run
 \code{vote} with a pure write-load, removing reads altogether. Since we are
 measuring the impact of writing to durable storage, Soup will run without
 sharding, resulting in a single domain writing new votes to
-\code{PersistentState}. The database is pre-populated with 100K articles and the
+\code{PersistentState}. The database is prepopulated with 100K articles and the
 inserted votes are uniformly distributed across the existing articles.
 
 Soup can be run both in a local and distributed fashion, and \code{vote}
@@ -120,7 +120,7 @@ make use of the replay benchmark described in section~\ref{sec:bench-replay},
 where each row is read at most once, resulting in a full replay from the base
 nodes.
 
-The database is pre-populated with 10 million rows, after which a small random
+The database is prepopulated with 10 million rows, after which a small random
 subset of the rows are read once. With \code{PersistentState}, Soup recovers
 existing data between each test run, after flushing the disk caches.
 
@@ -179,10 +179,10 @@ request is generated until completion (see section~\ref{sec:vote-open-loop}).
 The benchmark runs on two separate servers. SQL queries are issued by a workload
 generator and translated to native Soup requests using the MySQL shim layer (see
 section~\ref{sec:mysql-shim}). These requests are handled by a separate server,
-running Soup. Before initiating the benchmark, the database is pre-populated
-with a similar amount of data to the real Lobsters application: 120,000
-comments, 40,000 stories, and 9,200 users. Afterwards, the benchmark issues
-requests following a target throughput goal.
+running Soup. Before initiating the benchmark, the database is prepopulated with
+a similar amount of data to the real Lobsters application: 120,000 comments,
+40,000 stories, and 9,200 users. Afterwards, the benchmark issues requests
+following a target throughput goal.
 
 Note that unlike the write-throughput benchmark, Soup's write-ahead log is not
 used here. Instead, the benchmark compares purely in-memory---and not

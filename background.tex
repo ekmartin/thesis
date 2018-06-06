@@ -268,10 +268,8 @@ persisted to durable storage, after which they are propagated through Soup's dat
 graph asynchronously.
 
 Reads access double-buffered hash tables directly~\cite{evmap}, without the need
-for locks. Writes update one of the buffers, and expose updated content to the
+for locks. Writes update one of the buffers and expose updated content to the
 readers with an atomic swap.
-
-% TODO: maybe write a little more about the readers here
 
 \subsection{Architecture}\label{sec:soup-architecture}
 
