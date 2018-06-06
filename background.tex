@@ -372,11 +372,16 @@ defined ahead of time, and interactions with Soup have to go through Soup's
 external API.\@ Soup's MySQL shim~\cite{soup-mysql} makes this easier by letting
 applications communicate with Soup using the MySQL binary protocol.
 
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.7\textwidth]{shim}
+  \caption{\code{distributary-mysql} translates SQL-queries to appropriate Soup
+  API-calls.}
+\end{figure}
+
 The MySQL shim acts as a separate service, which clients interact with over
 TCP.\@ Received queries extend the Soup data-flow graph if needed, before they
 are forwarded to an appropriate Soup worker for execution.
-
-% TODO: maybe write a little more
 
 \section{SQLite}\label{sec:sqlite}
 SQLite~\cite{sqlite} is by far the most widely deployed database ever written.
@@ -413,8 +418,6 @@ be performed in $ O(\log_b n) $ disk reads, where $ b $ is the maximum number of
 entries per block, and $ \log_b n $ the height of the tree. With traditional
 storage mediums, where a single disk seek might take multiple milliseconds, this
 is extremely important.
-
-\todo{Include a figure of a B-tree and a B+tree perhaps?}
 
 When the term B-tree is used in database systems today, it is usually used to
 refer to an improved version of the traditional data structure, and known as a
@@ -991,6 +994,9 @@ fn main() {
 
 
 \section{Profiling}
+
+This section describes the tools used to reason about performance bottlenecks
+throughout the thesis.
 
 \subsection{CPU}
 
