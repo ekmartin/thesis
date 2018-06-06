@@ -745,6 +745,16 @@ same time, the hash based implementations are also considerably more efficient
 when that is the case, providing $ O(\log k) $ performance, where $ k $ is the
 number of keys within a specific prefix (which is often quite low).
 
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.3\textwidth]{hash.pdf}
+  \caption{\
+    In the hash table MemTable implementations, keys are bucketed based on a
+    pre-defined prefix extractor. The figure here uses the first character of
+    each key as its prefix.
+  }\label{fig:hash}
+\end{figure}
+
 \subsubsection{Hash linked list}
 
 Similar to the skip list based hash table, RocksDB also provides a hash based
