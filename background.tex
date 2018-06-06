@@ -2,7 +2,7 @@
 
 This chapter describes various concepts relevant to the rest of this thesis,
 starting with an introduction to the system this thesis makes its contributions
-to---Soup. Afterwards the Rust programming language is outlined, together with a
+to---Soup. Afterwards, the Rust programming language is outlined, together with a
 look at the \code{bincode} serialization library, which is used for both
 snapshotting and persistent base tables. Following that, a few profiling
 concepts are described, used to reason about performance issues throughout the
@@ -264,12 +264,10 @@ not be able to provide the performance it does without it. Eventual consistency
 avoids the need for explicit synchronization on every update, while allowing
 Soup to scale in a distributed fashion without a total ordering of writes.
 Clients receive write acknowledgments for writes when updates have been safely
-persisted to durable storage, after which they are propagated through Soup's data-flow
-graph asynchronously.
-
-Reads access double-buffered hash tables directly~\cite{evmap}, without the need
-for locks. Writes update one of the buffers and expose updated content to the
-readers with an atomic swap.
+persisted to durable storage, after which they are propagated through Soup's
+data-flow graph asynchronously. Reads access double-buffered hash tables
+directly~\cite{evmap}, without the need for locks. Writes update one of the
+buffers and expose updated content to the readers with an atomic swap.
 
 \subsection{Architecture}\label{sec:soup-architecture}
 
@@ -298,9 +296,12 @@ coordination layer.
 \subsubsection{Readers}
 
 Soup's reader nodes make use of double-buffered hash tables to make it possible
-to read and write to a single data structure at the same time. To prevent high
-throughput write processing from slowing down reads, read requests are processed
-by separate threads---readers.
+to read and write to a single data structure at the same time, without locks. To
+prevent high throughput write processing from slowing down reads, read requests
+are processed by separate threads---readers. Whenever a reader lacks state for a
+specific key, it issues a replay request to its ancestor nodes, which will be
+served on Soup's regular update path. Finally, the completed replay updates a
+reader's state by swapping the double-buffered tables.
 
 \subsection{Interacting with Soup}
 
@@ -700,9 +701,6 @@ iterating through keys within a \textit{specific prefix} is efficient: either by
 storing bloom filters for each prefix, or by managing a hash based index
 structure based on the prefix.
 
-% TODO: might show an example to better explain prefix stuff here, or save it
-% for implementation.
-
 \subsection{Column Families}
 
 RocksDB supports the equivalent of tables from a traditional database through
@@ -789,16 +787,15 @@ keys into separate buckets. This also limits seek-based iteration to a single
 prefix.
 
 \subsection{RocksDB from Rust}\label{sec:rust-rocksdb}
+
 While RocksDB is written in C++, it provides a separate API through its
 C-bindings, which are used to call into it from a variety of different
 languages\furl{https://github.com/facebook/rocksdb/blob/master/LANGUAGE-BINDINGS.md}.
-
-% TODO: ref to appendix?
-% TODO: ref to ffi section
-This thesis makes use of a modified version of
-\code{rust-rocksdb}\furl{https://github.com/spacejam/rust-rocksdb}, which
-exposes a Rust-friendly API that calls into the C-bindings. The
-majority of the modifications are listed in appendix A.
+This thesis makes use of a modified version of the
+\code{rust-rocksdb}\furl{https://github.com/spacejam/rust-rocksdb} wrapper
+library, used to call into the RocksDB API from Rust. The majority of the
+modifications required to make \code{rust-rocksdb} work with Soup are listed in
+appendix A.
 
 \begin{listing}[H]
   \begin{minted}[frame=lines]{rust}
@@ -827,13 +824,11 @@ language for everything from embedded systems to web service backends.
 
 When choosing a programming language, developers are often forced to compromise
 between higher level abstractions and performance. Large and latency sensitivity
-projects like databases often opt for the latter through low-level languages
-like C, which avoid expensive runtime safety checks. Rust removes this dilemma
-altogether by providing developers with both the fine-tuned control and
-performance they are used to in low-level languages, while offering abstractions
-developers might be familiar with from interpreted languages.
-
-% TODO: avoid expensive runtime safety checks is a weird sentence
+projects like databases often opt for the latter, through low-level languages
+like C. Rust removes this dilemma altogether by providing developers with both
+the fine-tuned control and performance they are used to in low-level languages,
+while offering abstractions developers might be familiar with from interpreted
+languages.
 
 \begin{listing}[H]
   \begin{minted}[frame=lines]{rust}
@@ -1013,22 +1008,23 @@ time spent on the horizontal axis, while showing the call graph vertically.
 
 \subsection{Memory}
 
-% TODO: shitty sentence
-Memory leaks happen when we continually allocate memory without freeing it. This
-can easily happen in languages without dynamic memory allocation, when a
-programmer forgets to deallocate some portion of memory after using it. At the
-same time it can also happen in garbage collected languages, \eg when
-continuously attaching listener functions to an event system without regard for
-previous subscriptions. Rust's ownership system largely prevents issues of the
-first kind from happening---variables that go out of scope are deallocated
-automatically. Regardless, Rust supports calling into arbitrary C-programs (see
-section~\ref{sec:ffi}), where anything could happen.
+Memory leaks become an issue when we continually allocate memory without freeing
+it. This can easily happen in languages without dynamic memory allocation, when
+a programmer forgets to deallocate some portion of memory after using it. Not to
+say that it is non-existent in garbage collected languages, where it instead
+often correlates to logical errors, \eg by continuously attaching listener
+functions to an event system without regard for previous subscriptions. Rust's
+ownership system largely prevents issues of the first kind from
+happening---variables that go out of scope are deallocated automatically.
+Regardless, Rust supports calling into arbitrary C-programs (see
+section~\ref{sec:ffi}), where memory can be allocated and deallocated without
+regard for safety.
 
-To profile memory leaks, the Valgrind
-Massif\furl{http://valgrind.org/docs/manual/ms-manual.html} heap profiler is
-used. Massif continuously takes snapshots of the heap, recording what memory is
-used for, and where that memory was allocated from. While this is subject to
-change in the future, current versions of Rust use the
+To profile memory leaks, we use the Valgrind
+Massif\furl{http://valgrind.org/docs/manual/ms-manual.html} heap profiler.
+Massif continuously takes snapshots of the heap, recording what memory is used
+for, and where that memory was allocated from. While this is subject to change
+in the future, the current version of Rust, version \code{1.26.2}, uses the
 \code{jemalloc}\furl{http://jemalloc.net/} memory allocator instead of the
 system's default allocator. Unfortunately, memory profiling using Valgrind does
 not work well with \code{jemalloc}. To resolve this we can instead force Rust to

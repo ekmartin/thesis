@@ -17,11 +17,10 @@ ensuring that all changes are persisted to disk before being accessed by
 readers.
 
 Merging the data from multiple packets before writing to the WAL drastically
-increases the throughput of the system. Not only does it reduce the amount of
-I/O operations required for a single packet, gathering up more records in a
-single unit also reduces the number of packets to feed through the data-flow graph.
-
-% TODO: bad sentence ^
+increases the throughput of the system. Instead of requiring a single write to
+durable storage per packet, Soup only needs to write once per batch. At the same
+time, it reduces the total amount of packets fed through the data-flow graph,
+allowing each node to operate on a larger batch of records at a time.
 
 \subsection{Log based recovery}\label{sec:log-recovery}
 

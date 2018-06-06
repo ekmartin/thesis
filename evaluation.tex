@@ -174,8 +174,6 @@ insertions, the benchmark also measures deletion performance. The latency
 measured is the \textit{sojourn} time of each request---the time from the
 request is generated until completion (see section~\ref{sec:vote-open-loop}).
 
-% TODO: maybe have an appendix with the lobsters queries.
-
 The benchmark runs on two separate servers. SQL queries are issued by a workload
 generator and translated to native Soup requests using the MySQL shim layer (see
 section~\ref{sec:mysql-shim}). These requests are handled by a separate server,
