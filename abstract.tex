@@ -13,7 +13,7 @@ durability. While fast memory access is crucial for frequently accessed
 materialized views, it is a cumbersome requirement for Soup's base tables, which
 only serve read requests at rare occasions. By implementing a disk-resident
 index structure on top of the RocksDB storage engine, this thesis moves Soup
-from a pure main-memory database, to a structured storage system capable of
+from a pure main-memory database to a structured storage system capable of
 handling datasets larger than its memory size, with only a small decrease in
 overall write throughput.
 
@@ -22,7 +22,7 @@ fatal failures by gradually building up its partially materialized views as
 needed. Similar to a system that recovers with an empty cache, this reduces
 initial performance while live requests slowly build up Soup's memory-based
 state. To completely remove the performance degradation of recovery, this thesis
-also implements a method for performing a global checkpoint of Soup's
+also implements a method of performing a global checkpoint of Soup's
 materialized state. By approaching the data-flow graph as a distributed system,
 the method performs a coordinated snapshot of all local state, allowing Soup to
 recover in about a tenth of the time.

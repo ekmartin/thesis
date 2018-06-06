@@ -269,8 +269,18 @@ shared ownership of a single value by counting owners at runtime. Subsequent
 retrievals of the same value always point to the same memory location, with the
 source of truth being stored in \code{State}.
 
-\todo{add a figure showing the difference between retrieving rows from memory
-and from durable storage}
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.8\textwidth]{state.pdf}
+  \caption{\
+    Rows read from \code{PersistentState} are deserialized from their on-disk
+    byte representation, and returned in a form that transfers the ownership of
+    the value to the caller. Values in memory are not serialized, and
+    \code{MemoryState} instead returns pointers, removing the need to duplicate
+    data. The \code{Cow} Rust structure represents either an \code{Owned} value,
+    as in the first case, or a \code{Borrowed} value---a pointer.
+  }\label{fig:state}
+\end{figure}
 
 What if, on the other hand, a row does not exist in memory to begin with? This
 would be the case when data is retrieved from durable storage: after reading a
