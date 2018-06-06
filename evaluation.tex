@@ -2,14 +2,13 @@
 
 Neither persistent base nodes nor snapshotting lead to direct performance
 benefits for Soup. Instead, they both come with a wide range of features and
-improvements in other areas, helping Soup make a significant leap towards being
-a production-ready database system. Moving the base node state to durable
-storage lets Soup operate on datasets larger than its memory size, while
-reducing the overall memory usage of the system. It improves the system's
-overall recovery capabilities---a necessity if Soup is ever going to be usable
-for long running applications. Snapshotting takes this a step further, and
-removes the performance penalty Soup sees while its partial states are brought
-back to the state they were prior to a fatal failure.
+improvements in other areas, further advancing Soup towards a production-ready
+storage system. Moving the base node state to durable storage lets Soup operate
+on datasets larger than its memory size, reduces its overall memory usage, and
+improves the system's overall recovery capabilities---a necessity if Soup is
+ever going to be usable for long running applications. Snapshotting takes this a
+step further, and removes the performance penalty Soup sees while its partial
+states are brought back to the state they were in prior to a fatal failure.
 
 Regardless, Soup's performance when faced with a large amount of concurrent
 requests is still one of its main contributions. While a certain reduction in
@@ -33,7 +32,7 @@ in write latency at the base nodes could have disastrous effects for the overall
 write throughput of the system.
 
 The \code{vote} benchmark described in section~\ref{sec:vote} is used to measure
-write-performance. While it is normally a mixed-load benchmark where clients
+write-performance. While it is normally a mixed-load benchmark, where clients
 both write new votes and read the existing vote counts of articles, we will run
 \code{vote} with a pure write-load, removing reads altogether. Since we are
 measuring the impact of writing to durable storage, Soup will run without
@@ -71,9 +70,9 @@ former has to include entries for every index a base node maintains, while the
 latter only needs one entry for the update itself.
 
 Additionally, writing to RocksDB's in-memory buffers is not a negligible cost,
-especially considering serialization. Whereas the Soup log only needed to
-serialize the update once, \code{PersistentState} needs to do so, in-part, once
-for each index.
+especially considering serialization. Whereas the Soup log only serializes
+updates once, \code{PersistentState} needs to do so, in-part, once for each
+index.
 
 \subsection{MemTable format}
 
@@ -81,8 +80,8 @@ All writes to RocksDB are first placed in an in-memory buffer---a MemTable.
 RocksDB includes multiple MemTable implementations, and the advantages and
 disadvantages of the different data structures are described in
 section~\ref{sec:memtable-impl}. To measure the impact of changing the MemTable
-implementation, the same vote benchmark used in the previous sections is used,
-with the same hardware.
+implementation, we make use of the \code{vote} benchmark from the previous
+section, running on the same hardware.
 
 \begin{figure}[H]
   \includegraphics[width=\textwidth]{graphs/memtable}
@@ -114,12 +113,12 @@ to a single key, a unique article.
 \section{Read-performance}
 
 When measuring the overall read-performance of Soup as a system, a read heavy
-\code{vote} benchmark is a good indicator. To analyze the impact of persisting
-state to durable storage at the base nodes we want to ensure that we are
-actually measuring the read performance of the \textit{base nodes} however, and
-not the partial nodes further down the graph. Instead, we will make use of the
-replay benchmark described in section~\ref{sec:bench-replay}, where each row is
-read at most once, resulting in a full replay from the base nodes.
+\code{vote} benchmark is a good indicator. To analyze the impact of durable
+storage, we want to ensure that we are measuring the read performance of the
+base nodes, and not the partial nodes further down the graph. Instead, we will
+make use of the replay benchmark described in section~\ref{sec:bench-replay},
+where each row is read at most once, resulting in a full replay from the base
+nodes.
 
 The database is pre-populated with 10 million rows, after which a small random
 subset of the rows are read once. With \code{PersistentState}, Soup recovers
@@ -144,7 +143,7 @@ from the file system cache, reducing the overall latency of most reads.
 
 RocksDB provides two separate SS-table implementations, \code{BlockBasedTable}
 and \code{PlainTable}, as described in section~\ref{sec:ss-table}. The latter
-imposes limitations that the former does not have, but promises lower read
+imposes limitations that the former does not have but promises lower read
 latency on fast storage mediums in return.
 
 \begin{figure}[H]
@@ -170,7 +169,7 @@ distribution modeled after the application's production traffic. Whereas the
 previous benchmarks measure queries per second, the Lobsters benchmark uses
 pages per second as its metric, where separate pages require different queries.
 A single page view can issue both read and write requests, through insertions,
-lookups, and updates. As Soup translates updates to removals followed by
+lookups, and updates. As Soup translates updates to removals, followed by
 insertions, the benchmark also measures deletion performance. The latency
 measured is the \textit{sojourn} time of each request---the time from the
 request is generated until completion (see section~\ref{sec:vote-open-loop}).
@@ -181,13 +180,13 @@ The benchmark runs on two separate servers. SQL queries are issued by a workload
 generator and translated to native Soup requests using the MySQL shim layer (see
 section~\ref{sec:mysql-shim}). These requests are handled by a separate server,
 running Soup. Before initiating the benchmark, the database is pre-populated
-with a similar amount of data to the real Lobsters application: 120\,000
-comments, 40\,000 stories, and 9\,200 users. Afterwards the benchmark issues
+with a similar amount of data to the real Lobsters application: 120,000
+comments, 40,000 stories, and 9,200 users. Afterwards, the benchmark issues
 requests following a target throughput goal.
 
 Note that unlike the write-throughput benchmark, Soup's write-ahead log is not
-used here. Instead, the benchmark compares purely in-memory---and not durable---
-Soup to Soup with its base tables safely stored in durable RocksDB.\@
+used here. Instead, the benchmark compares purely in-memory---and not
+durable---Soup, to Soup with its base tables safely stored in durable RocksDB.\@
 
 \subsection{Computational overhead}
 
@@ -241,13 +240,13 @@ drastic on a server with slower storage media.
 \section{Recovery}
 
 The recovery benchmark introduced in section~\ref{sec:bench-recovery} helps us
-compare the impact different durability strategies have on the time it takes to
-recover after a failure. For every data point, the database is populated with
-10K articles and a varying amount of votes divided evenly between the articles.
-After population, Soup is restarted, while the time it takes to recover is
-measured. The state is considered recovered when the total sum of votes returned from
-reading all articles equal the actual amount of votes in the system---signified
-as \textit{total} in figure~\ref{fig:graph-recovery}.
+compare the recovery impact imposed by different durability strategies. For
+every data point, the database is populated with 10K articles and a varying
+amount of votes divided evenly between the articles. After population, Soup is
+restarted, while the time it takes to recover is measured. The state is
+considered recovered when the total sum of votes returned from reading all
+articles equal the actual amount of votes in the system---signified as
+\textit{total} in figure~\ref{fig:graph-recovery}.
 
 Unlike the other durability methods, recovering with durable base nodes does not
 affect the partial nodes further down the graph---they remain empty until future
@@ -306,17 +305,17 @@ SSD-drive, and the gap would without doubt be less significant on slower storage
 media. Regardless, with a focus on reducing recovery time, this is not a
 trade-off we are willing to make.
 
-\subsection{Write-performance with snapshotting}
+\subsection{Write-performance with snapshotting}\label{sec:snapshot-write}
 
-Snapshotting is a significant improvement to Soup's recovery situation, and a
+Snapshotting is a significant improvement to Soup's recovery situation and a
 step in the right direction for Soup as a production-ready system. Regardless,
 it is only useful if Soup manages to maintain much of the same write-throughput
 while performing regular snapshots.
 
-To measure the performance penalty of snapshotting, we make use of the vote
-benchmark described in section~\ref{sec:vote} and earlier in this chapter. The
-benchmark compares the batch write latency at increasing throughput targets,
-first without snapshotting and then with. The benchmark runs for 60 seconds,
+To measure the performance penalty of snapshotting, we make use of the
+\code{vote} benchmark described in section~\ref{sec:vote} and earlier in this
+chapter. The benchmark compares the batch write latency at increasing throughput
+targets, both with and without snapshotting. The benchmark runs for 60 seconds,
 performing a snapshot every 10 seconds.
 
 \begin{figure}[H]

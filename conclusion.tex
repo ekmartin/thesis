@@ -2,7 +2,7 @@
 
 This chapter looks back at the results presented earlier in this thesis, drawing
 conclusions from both the positive and the negative side-effects of the
-contributed implementations. Afterwards it takes a look at possible durability
+contributed implementations. Afterwards, it takes a look at possible durability
 directions Soup might take in the future, towards the eventual goal of becoming
 a production-ready system.
 
@@ -14,16 +14,16 @@ Storing Soup's base tables on durable storage instead of in-memory lets Soup
 handle continuously increasing quantities of data without having its
 memory-usage grow without bounds. With base tables safely stored on durable
 storage, Soup no longer needs to replay all previous updates to recover after a
-failure. Read operations instead replay data from the base tables when needed,
+failure. Read-operations instead replay data from the base tables when needed,
 eventually bringing Soup's partially materialized views back to a similar state
 they were in prior to the failure.
 
-The persistent base table implementation contributed throughout this replaces
-Soup's in-memory index structure with a durable index structure built on top of
-RocksDB---a battle-tested key-value storage layer developed at Facebook.
-Compared to Soup's previous ever-growing write-ahead log, the RocksDB-based
-implementation decreases the raw write-throughput with about 10\%, while
-providing significant benefits both for recovery and memory-usage. The
+The persistent base table implementation contributed throughout this thesis
+replaces Soup's in-memory index structure with a durable index structure built
+on top of RocksDB---a battle-tested key-value storage layer developed at
+Facebook. Compared to Soup's previous ever-growing write-ahead log, the
+RocksDB-based implementation decreases the raw write-throughput with about 10\%,
+while providing significant benefits both for recovery and memory-usage. The
 implementation is currently used by the latest Soup prototype.
 
 \section{Snapshotting}
@@ -53,10 +53,10 @@ durable soup is (e.g., replication?)}
 
 \subsection{Snapshotting and persistent bases}
 
-The \code{PersistentState} implementation described
-in~\ref{chap:persistent-bases} removes the regular Soup write-ahead log in favor
-of relying on RocksDB for durability. RocksDB maintains its own WAL,
-which---unlike Soup's---is discarded when its updates are safely flushed to
+The \code{PersistentState} implementation described in
+section~\ref{chap:persistent-bases} removes the regular Soup write-ahead log in
+favor of relying on RocksDB for durability. RocksDB maintains its own WAL,
+which, unlike the Soup WAL, is discarded when its updates are safely flushed to
 durable storage. This is far better for recovery purposes, as it avoids the need
 to go through a seemingly endless stream of updates to restore Soup back to a
 pre-failure state. It does, on the other hand, complicate matters for
@@ -81,8 +81,8 @@ instead of empty. This would prevent Soup from issuing base node replays,
 effectively discarding the updates that happened after the last snapshot was
 taken.
 
-That leaves the question of how to replay any updates that happened after the
-last snapshot was taken, while still relying on RocksDB's write-ahead log for
+That leaves the question of how to replay updates that happened after the last
+snapshot was taken, while still relying on RocksDB's write-ahead log for
 persistence. The first step would be to ensure that RocksDB never discards WAL
 files until all its updates are included in a snapshot. Secondly, Soup's
 recovery procedure would need to retrieve updates that happened after the last
@@ -93,9 +93,16 @@ persisted snapshot.
 
 \subsection{\code{PersistentState} serialization}
 
-Both the keys and values persisted to RocksDB are serialized using
-bincode (see section~\ref{sec:bincode}). While bincode performs well
-compared to other serialization libraries,
+Both the keys and values persisted to RocksDB are serialized using bincode (see
+section~\ref{sec:bincode}). While bincode performs well compared to other
+serialization libraries, implementing encoding techniques specifically for
+Soup's use case would come with other potential benefits. One example is
+specific sorting orders in \code{PersistentState}. With the current
+implementation, keys would have to be deserialized before they could be compared
+to each other, resulting in unnecessary allocations. These allocations would be
+avoided by using an encoding scheme where keys could be compared without
+deserialization, such as \eg MyRock's \code{memcomparable}
+format~\cite{myrocks-encoding}.
 
 \subsection{Uncoordinated snapshots}
 
@@ -123,6 +130,7 @@ used by persistent base nodes, either by having the snapshotting workers apply
 received updates to RocksDB, or by doing so directly from each domain. This
 would significantly reduce the write-amplification required to persist a
 snapshot, by avoiding the need to write duplicate data to disk again and again.
-By doing so, it would also minimize the risk of filling up the snapshot workers'
-queues, which could now happen if the time it takes to serialize and persist a
-single, possibly large, snapshot grows beyond the predefined snapshot interval.
+Incremental snapshotting would also minimize the risk of filling up the snapshot
+workers' queues, which could now happen if the time it takes to serialize and
+persist a single, possibly large, snapshot grows beyond the predefined snapshot
+interval.
