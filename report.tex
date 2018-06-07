@@ -1,5 +1,5 @@
 % 0 for single page, 1 for book:
-\def\mode{0}
+\def\mode{1}
 
 \if 0\mode
   \documentclass[b5paper]{report}
@@ -41,6 +41,7 @@
 \titleformat*{\subsubsection}{\large\bfseries}
 
 \fancyhf{}
+\cfoot{\thepage}
 
 \if 0\mode
   \fancyhead[LO,LE]{\textsc{\leftmark}}
@@ -126,14 +127,23 @@
 
 \begin{document}
 
-\frontpage
-
 \input{macros}
+
+\if 0\mode
+  \frontpage
+\fi
+
+\renewcommand{\thepage}{\roman{page}}
+
+\setcounter{page}{1}
+
 \input{abstract}
 \input{norwegian-abstract}
 \input{preface}
 
 \tableofcontents
+\clearpage\setcounter{page}{1}
+\renewcommand{\thepage}{\arabic{page}}
 
 \ChNameVar{\fontsize{14}{16}\usefont{OT1}{cmr}{m}{n}\selectfont}
 \ChNumVar{\fontsize{60}{62}\usefont{OT1}{qpl}{m}{n}\selectfont}
