@@ -8,23 +8,25 @@ a production-ready system.
 
 \newpage
 
-\section{Persistent bases}
+\section{Persistent base tables}
 
-Storing Soup's base tables on durable storage instead of in-memory lets Soup
-handle continuously increasing quantities of data without having its
-memory-usage grow without bounds. With base tables safely stored on durable
-storage, Soup no longer needs to replay all previous updates to recover after a
-failure. Read-operations instead replay data from the base tables when needed,
-eventually bringing Soup's partially materialized views back to a similar state
-they were in prior to the failure.
+Storing base tables on durable storage, instead of in volatile memory, lets Soup
+handle continuously increasing quantities of data without having its memory
+usage grow without bounds. With base tables stored safely on durable storage,
+Soup no longer needs to replay all previous updates to recover after a failure.
+Read requests instead replay data from the base tables when needed, eventually
+bringing Soup's partially materialized views back to a similar state they were
+in prior to the failure.
 
 The persistent base table implementation contributed throughout this thesis
 replaces Soup's in-memory index structure with a durable index structure built
 on top of RocksDB---a battle-tested key-value storage layer developed at
 Facebook. Compared to Soup's previous ever-growing write-ahead log, the
-RocksDB-based implementation decreases the raw write-throughput with about 10\%,
-while providing significant benefits both for recovery and memory-usage. The
-implementation is currently used by the latest Soup prototype.
+RocksDB-based implementation decreases the raw write throughput with about 10\%,
+while moving Soup from a pure main-memory database to a storage layer capable of
+handling data larger than its resident memory size, with significant benefits
+for both recovery and Soup's overall memory usage. The implementation is
+currently used by the latest Soup prototype.
 
 \section{Snapshotting}
 
@@ -32,24 +34,40 @@ With base tables persisted to durable storage, Soup can begin serving requests
 shortly after recovering from a failure. Unfortunately, these requests will need
 to go through the entire data-flow graph before returning, with Soup's partially
 materialized views starting out empty after recovering. Akin to the performance
-penalty a cold cache induces, Soup will perform read requests with higher
-latency until the application's working set again is present in the partially
+penalty induced by a cold cache, Soup performs read requests with higher latency
+until the application's working set again is present in the partially
 materialized nodes throughout the graph. Snapshotting avoids this by restoring
 all materialized state, after which Soup can continue serving read operations as
 if nothing happened.
 
-Compared to log-based recovery, the snapshotting implementation described in
-section~\ref{sec:snapshotting} recovers in less than a tenth of the time, while
-inducing a small 10\% overall penalty to Soup's write-throughput. At the same
-time, there are cases that potentially produce consistency issues in the current
-snapshotting algorithm, which would need to be resolved.
+Compared to log-based recovery, the snapshotting implementation described
+throughout this thesis recovers in less than a tenth of the time, at the cost of
+a 10\% overall penalty to Soup's write throughput. While rapid recovery is an
+important property for a database system, the performance penalty induced here
+comes with considerably less benefits than moving Soup's base tables to durable
+storage, leaving the question of whether it is a reasonable compromise open. At
+the same time, the effects of snapshotting over a longer period of time have yet
+to be investigated and should be considered---especially in regards to the
+proposed improvements to the current snapshotting method. All in all,
+snapshotting is a promising concept, with the possibility of being an important
+part of a production-ready Soup system in the future.
 
-\todo{this needs a bit more info, and a more concluding conclusion}
+\section{Conclusion}
 
-\todo{this should probably have a section that concludes what the future of
-durable soup is (e.g., replication?)}
+This thesis presents the internals of the Soup structured storage system and the
+challenges faced by its current solution for maintaining write durability. Prior
+to the contributions described throughout this thesis, Soup was a pure
+main-memory database, incapable of handling datasets beyond the size of its
+available memory. Now, Soup stores the majority of its data in durable index
+structures, while maintaining much of the same performance guarantees as before.
+Finally, Soup recovers considerably faster after failures, as it no longer has
+to go through and re-apply all updates from its previously ever-growing
+write-ahead log.
 
 \section{Future work}\label{sec:future-work}
+
+This section presents possibly paths of improvement for the two main
+contributions presented throughout this thesis.
 
 \subsection{Snapshotting and persistent bases}
 
