@@ -107,7 +107,7 @@ both seamlessly.
 \end{figure}
 
 Added queries extend the existing data-flow with additional nodes, while
-re-using as much as possible of the existing graph. New partially materialized
+reusing as much as possible of the existing graph. New partially materialized
 nodes can start serving requests right away, by fetching data from ancestor
 nodes if necessary. This is not the case with fully materialized nodes, which
 require a full representation of their state at all times. To bring these nodes
@@ -173,7 +173,7 @@ the evicted state.
 
 The keys to evict at a specific node are picked randomly. In the future, this
 could be improved through more sophisticated eviction strategies, such as only
-evicting the least-recently used records.
+evicting the least recently used records.
 
 \subsection{Operators}
 
@@ -221,7 +221,7 @@ age < 10} would produce a filter operator emitting only records where \code{age
 
 \subsubsection{Stateful operators}
 
-Whereas stateless operators resemble their counter-parts in relational
+Whereas stateless operators resemble their counterparts in relational
 databases~\cite{codd}, Soup's stateful operators compute results incrementally
 by maintaining internal state between updates. This saves Soup from re-doing
 potentially expensive computations, by instead mutating the previous result when
@@ -635,7 +635,7 @@ MyRocks~\cite{myrocks} and TiDB~\cite{tidb}.
 
 Traditional B-tree based database systems are often faced with poor write
 performance as a result of random writes, which perform worse than sequential
-writes on both magnetic and flash based storage mediums. RocksDB, on the other
+writes on both magnetic and flash-based storage mediums. RocksDB, on the other
 hand, achieves impressive write performance through the use of immutable
 log-structured merge trees~\cite{lsm} (LSM-trees), avoiding the need for random
 writes to persistent storage altogether.
@@ -761,7 +761,7 @@ as long as there are enough available background threads to do so.
 Iterating through every SS-table available to find a single key is inefficient.
 Instead, we would like to ask the question ``can this key possibly exist here?''
 for each of the SS-tables we go through, and only operate on the ones where the
-answer is affirmative. With a regular hash based data structure this would be
+answer is affirmative. With a regular hash-based data structure this would be
 quite costly in terms of space, as we would need to maintain such a structure
 for every SS-table in our database. Instead, RocksDB, and many other systems
 like it, rely on a probabilistic data structure known as a bloom
@@ -781,17 +781,16 @@ that its data is \textit{sorted}, and that it can be queried as such through
 not have been feasible with a regular key-value store, such as range queries.
 RocksDB supports iterating both forwards and backwards.
 
-Similar to with reads, performing a fully ordered scan in an LSM-tree based
-storage engine is far from optimal: every tree-structure, or SS-table in
-RocksDB, needs to be considered, and as key ranges may overlap between different
-files, sorted.
+Similar to with reads, performing a fully ordered scan in an LSM-tree storage
+engine is far from optimal: every tree-structure, or SS-table in RocksDB, needs
+to be considered, and as key ranges may overlap between different files, sorted.
 
 A lot of applications do not rely on completely random scans of keys however,
 and only need support for ordered queries within a specific \textit{key prefix}.
 Developers instruct RocksDB on how to retrieve a specific prefix from each key,
 which RocksDB then internally uses to organize the data in such a manner that
 iterating through keys within a \textit{specific prefix} is efficient: either by
-storing bloom filters for each prefix, or by managing a hash based index
+storing bloom filters for each prefix, or by managing a hash-based index
 structure based on the prefix.
 
 \subsection{Column Families}
@@ -830,11 +829,11 @@ memory overhead.
 
 \subsubsection{Hash skip list}
 
-RocksDB provides two hash based MemTable factories, where keys are organized in
+RocksDB provides two hash-based MemTable factories, where keys are organized in
 buckets based on their extracted \textit{prefix}. This implies that the hash
 based implementations are only usable when a prefix extractor is defined, and
 that they only support efficient iterations within a specific prefix. At the
-same time, the hash based implementations are also considerably more efficient
+same time, the hash-based implementations are also considerably more efficient
 when that is the case, providing $ O(\log k) $ performance, where $ k $ is the
 number of keys within a specific prefix (which is often quite low).
 
@@ -850,7 +849,7 @@ number of keys within a specific prefix (which is often quite low).
 
 \subsubsection{Hash linked list}
 
-Similar to the skip list based hash table, RocksDB also provides a hash based
+Similar to the skip list based hash table, RocksDB also provides a hash-based
 implementation where each bucket is maintained as a linked list instead of a
 skip list. This is similar to a traditional hash table with chaining as its
 collision resolution, and maintains close to constant time performance
@@ -883,8 +882,8 @@ modern storage media,
 \code{PlainTable}\furl{https://github.com/facebook/rocksdb/wiki/PlainTable-Format}.
 The format was initially developed for in-memory databases, but performs well on
 other high performance mediums as well. Unlike \code{BlockBasedTable},
-\code{PlainTable} addresses records by row, and uses a hash based in-memory
-index for efficient reads. Similar to the hash based MemTable formats described
+\code{PlainTable} addresses records by row, and uses a hash-based in-memory
+index for efficient reads. Similar to the hash-based MemTable formats described
 in section~\ref{sec:memtable-impl}, it uses \textit{prefix extraction} to place
 keys into separate buckets. This also limits seek-based iteration to a single
 prefix.
@@ -920,10 +919,10 @@ match db.get(key) {
 \section{Rust}\label{sec:rust}
 
 Rust\furl{https://www.rust-lang.org/} is an open-source systems programming
-language spearheaded by Mozilla, where it is used to build Servo---a next
-generation browser engine\furl{https://servo.org/}. Rust provides memory safety
-without the runtime overhead of \eg garbage collection, making it a suitable
-language for everything from embedded systems to web service backends.
+language spearheaded by Mozilla, where it is used to build Servo---a
+next-generation browser engine\furl{https://servo.org/}. Rust provides memory
+safety without the runtime overhead of \eg garbage collection, making it a
+suitable language for everything from embedded systems to web service backends.
 
 When choosing a programming language, developers are often forced to compromise
 between higher level abstractions and performance. Large and latency sensitivity
@@ -944,7 +943,7 @@ fn output(input: String) {
 }
 
 fn main() {
-    // Construct a mutable String, from a string litteral (str):
+    // Construct a mutable String, from a string literal (str):
     let mut input = String::from("Hi!");
     // Pass a mutable reference to suffix:
     suffix(&mut input);
@@ -960,7 +959,7 @@ fn main() {
   }
 \end{listing}
 
-One of Rust’s key features is providing compile time safety both in terms of
+One of Rust’s key features is providing compile-time safety both in terms of
 types and memory. The latter is done through an ownership model which lets
 developers program mostly without thinking about memory allocation and
 deallocation, without the lowered performance of using something like a garbage

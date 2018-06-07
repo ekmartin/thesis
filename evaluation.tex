@@ -94,8 +94,8 @@ section, running on the same hardware.
 Changing from the default skip list implementation results in a significant
 increase in write-throughput. In reality, this is a comparison of the $ O(\log
 n) $ performance guarantees of a skip list and the closer to constant time
-guarantees of the hash based implementations. RocksDB buckets keys based on the
-their prefix, where the two hash based implementations use different data
+guarantees of the hash-based implementations. RocksDB buckets keys based on the
+their prefix, where the two hash-based implementations use different data
 structures to organize each bucket. Using a skip list for the buckets result in
 $ O(\log p) $ insertions, where $ p $ is the amount of keys within a single
 prefix. Linked list buckets improves this even further, with constant time
@@ -112,7 +112,7 @@ to a single key, a unique article.
 
 \section{Read-performance}
 
-When measuring the overall read-performance of Soup as a system, a read heavy
+When measuring the overall read-performance of Soup as a system, a read-heavy
 \code{vote} benchmark is a good indicator. To analyze the impact of durable
 storage, we want to ensure that we are measuring the read performance of the
 base nodes, and not the partial nodes further down the graph. Instead, we will
@@ -158,7 +158,7 @@ Soup's persistence base tables rely heavily on prefix iteration---one of
 \code{PlainTable}'s design
 goals\furl{rocksdb.org/blog/2014/06/23/plaintable-a-new-file-format.html}. This
 results in significantly lower overall read latency compared to the traditional
-block based format.
+block-based format.
 
 \section{Mixed workload}
 

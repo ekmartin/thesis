@@ -21,18 +21,18 @@ what otherwise might be known as \textit{tables}.
 While partial nodes can use \textit{eviction} (see section~\ref{sec:eviction})
 to keep their memory footprint low, the size of base nodes will continue to grow
 unbounded throughout a Soup instance's lifetime. In the short term this can be
-handled by sharding Soup's data across multiple machines in a cluster, however
+handled by sharding Soup's data across multiple machines in a cluster, however,
 this is infeasible in the long term: sustained write workloads would continue to
 grow the base node state, regardless of whether the data is accessed by queries
 or not.
 
-To combat this we would like to to move either parts of, or all of, the state
-stored in base nodes to durable storage. This would reduce Soup's overall memory
-usage, and perhaps even more significantly, transition Soup from a purely
-in-memory database to a system that can store more data than its available
-memory. With data safely persisted to the base nodes, recovery after a failure
-would also require less work, as partial nodes could gradually recover when data
-is requested through replays. Summarized, introducing persistence to Soup's base
+To combat this, we would like to move either part or all of the state stored
+in base nodes to durable storage. This would reduce Soup's overall memory usage,
+and perhaps even more significantly, transition Soup from a purely in-memory
+database to a system that can store more data than its available memory. With
+data safely persisted to the base nodes, recovery after a failure would also
+require less work, as partial nodes could gradually recover when data is
+requested through replays. Summarized, introducing persistence to Soup's base
 nodes would achieve the following goals:
 
 \begin{enumerate}

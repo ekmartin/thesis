@@ -44,7 +44,7 @@ core. With clever key schemes and heavy use of RocksDB's iteration properties,
 CockroachDB and TiDB can support secondary indices on top of RocksDB---a
 well-supported and heavily tested library with reliable performance guarantees.
 Other projects, such as SLIK~\cite{slik}, HyperDex~\cite{hyperdex}, and
-Replex~\cite{replex}, implement secondary indexing as first class citizens in
+Replex~\cite{replex}, implement secondary indexing as first-class citizens in
 new distributed key-value stores built from the ground up.
 
 \subsection{Secondary indices with LSM-trees}
@@ -54,7 +54,7 @@ memory, amortizing the disk write penalty across a batch of writes.
 AsterixDB~\cite{asterix-storage} recognizes the effectiveness of the LSM-tree
 approach, and applies the same technique to in-place update index structures.
 The process---which they refer to as LSM-ification---lets AsterixDB build
-secondary indices using read optimized data structures, \eg B-trees. While this
+secondary indices using read-optimized data structures, \eg B-trees. While this
 is an interesting approach, on-disk data structures are far from trivial to
 implement, and additional data structures undoubtedly increase a system's
 overall complexity---even if the data structures are built on the same
