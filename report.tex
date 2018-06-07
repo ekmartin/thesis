@@ -11,6 +11,7 @@
 \usepackage[tmargin=27mm, bmargin=30mm]{geometry}
 % \usepackage[a4,center,frame]{crop}
 
+\usepackage{caption}
 \usepackage{csquotes}
 \usepackage{microtype}
 \usepackage{booktabs}
@@ -46,7 +47,8 @@
 \if 0\mode
   \fancyhead[LO,LE]{\textsc{\leftmark}}
 \else
-  \fancyhead[LO,RE]{\textsc{\leftmark}}
+  \fancyhead[LE]{\textsc{\leftmark}}
+  \fancyhead[RO]{\textsc{\rightmark}}
 \fi
 
 \graphicspath{{images/}}

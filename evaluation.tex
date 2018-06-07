@@ -42,7 +42,7 @@ inserted votes are uniformly distributed across the existing articles.
 
 Soup can be run both in a local and distributed fashion, and \code{vote}
 supports both. Writing to durable storage is a penalty fixed per machine
-however, and benchmarking the horizontal scalability makes little sense.
+however, and benchmarking its horizontal scalability makes little sense.
 Instead, we will use the \textit{local} \code{vote} benchmark, where both the
 clients and the Soup workers run on the same machine.
 

@@ -157,9 +157,8 @@ of the requests received. Dynamic sharding would evenly re-balance the workload
 across the shards, and is a future implementation goal for Soup.
 
 When necessary, a \textit{sharder} node is inserted between domains, translating
-between sharding schemes in separate domains. This allows nodes further down in
-the graph to remain partial, at the cost of having to replay state across
-domains.
+between sharding schemes in separate domains. This allows nodes further down the
+graph to remain partial, at the cost of having to replay state across domains.
 
 
 \subsubsection{Eviction}\label{sec:eviction}
@@ -201,7 +200,7 @@ materialized at all times.
 Stateless operators process updates with no regard for prior events, without
 maintaining any state at all. The operators that fall within this category are
 \textit{pure functions}, such as the \textit{projection} and \textit{filter}
-operators. The former pick out one or more fields from each incoming row, while
+operators. The former picks out one or more fields from each incoming row, while
 the latter determines if a row should be forwarded through the data-flow graph
 or not.
 
@@ -516,7 +515,7 @@ is extremely important.
 
 When the term B-tree is used in database systems today, it is usually used to
 refer to an improved version of the traditional data structure, and known as a
-B+-tree. Whereas the former stores values in all levels of the tree, the
+B+tree. Whereas the former stores values in all levels of the tree, the
 specialized version only does so at the leaf level, with the internal nodes only
 containing copies of the keys. Actual records can then be stored in a different
 on-disk data structure, with pointers from the leaf nodes, and by introducing
@@ -545,17 +544,17 @@ and durability guarantees, the use of a WAL significantly improves write
 performance by catering to more sequential disk access. Additionally, reading
 can now co-exist with writing, as writers do no longer block read access.
 
-While the original rollback journal format writes directly to the database file,
-maintaining old values in the rollback journal, SQLite in WAL-mode does the
+The original rollback journal format writes directly to the database file, while
+maintaining old values in the rollback journal. SQLite in WAL-mode does the
 opposite. Updates are appended to the WAL, and copied over to the main database
 file when a \textit{checkpoint} is taken. This is also the reason readers can
 continue to access the database while writes are happening, as the database file
 itself is not mutated, only the WAL.\@
 
-This introduces a slight performance penalty for reads however, as there are now
-potentially two sources of truth for all content: the main database file, and
-the WAL until a checkpoint happens. The longer the WAL is, the more time has to
-be spent searching through it by reads.
+This introduces a slight performance penalty for reads, however, as there are
+now potentially two sources of truth for all content: the main database file,
+and the WAL---until a checkpoint happens. The longer the WAL is, the more time
+has to be spent searching through it by reads.
 
 \subsection{Interacting with SQLite}
 Most applications interact with SQLite through its C-API, compiling SQL
@@ -597,13 +596,13 @@ sqlite3_bind_int(statement, 1, id);
 In addition, most programming languages have at least one popular library for
 accessing SQLite, abstracting away the need to directly call into the C-bindings
 through more idiomatic APIs for each language. SQLite also provides a
-command-line interface, which can be used to directly read from and modify a
-database with SQL statements.
+command-line interface, which can be used for reads and modifications.
 
 \subsection{SQLite from Rust}
-Accessing SQLite from Rust can be done through the excellent \code{Rusqlite}
-library~\cite{rusqlite}, which
-provides a Rust API on top of SQLite's C-bindings.
+
+Accessing SQLite from Rust can be done through the excellent \code{rusqlite}
+library~\cite{rusqlite}, which provides a Rust API on top of SQLite's
+C-bindings.
 
 \begin{listing}[H]
   \begin{minted}[frame=lines]{rust}
@@ -854,7 +853,7 @@ implementation where each bucket is maintained as a linked list instead of a
 skip list. This is similar to a traditional hash table with chaining as its
 collision resolution, and maintains close to constant time performance
 guarantees as long as the elements in each bucket is kept low. This comes with
-significantly lower memory overhead compared to the skip list based hash table,
+significantly lower memory overhead compared to the skip list based hash table
 but with naturally lower performance when the amount of keys per prefix starts
 to grow. Because of this, the buckets in a \code{HashLinkList} are implicitly
 converted to a skip list when its element count exceeds a certain threshold (256

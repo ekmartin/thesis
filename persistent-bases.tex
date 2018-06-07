@@ -3,13 +3,13 @@
 Updates begin their journey through the Soup data-flow graph at the base nodes,
 after being successfully persisted to Soup's write-ahead log. While nodes
 further down in the graph might be \textit{partial}, the base nodes always
-contain every single record a Soup application has seen through its lifetime.
-This is crucial in maintaining a balance between efficient read queries and
-space usage: popular queries will be handled by partial state further down the
-graph, while reads for infrequently accessed rows will be able to refer all the
-way up to the source of truth, the base nodes, through what in Soup is called a
-replay. In comparison to existing database systems, base nodes are closest to
-what otherwise might be known as \textit{tables}.
+contain every single record stored in a Soup application. This is crucial in
+maintaining a balance between efficient read queries and space usage: popular
+queries will be handled by partial state further down the graph, while reads for
+infrequently accessed rows will be able to refer all the way up to the source of
+truth, the base nodes, through what in Soup is called a replay. In comparison to
+existing database systems, base nodes are closest to what otherwise might be
+known as \textit{tables}.
 
 \begin{figure}[H]
   \centering
@@ -19,12 +19,12 @@ what otherwise might be known as \textit{tables}.
 \end{figure}
 
 While partial nodes can use \textit{eviction} (see section~\ref{sec:eviction})
-to keep their memory footprint low, the size of base nodes will continue to grow
-unbounded throughout a Soup instance's lifetime. In the short term this can be
-handled by sharding Soup's data across multiple machines in a cluster, however,
-this is infeasible in the long term: sustained write workloads would continue to
-grow the base node state, regardless of whether the data is accessed by queries
-or not.
+to keep their memory footprint low, the size of the base nodes will continue to
+grow unbounded throughout a Soup instance's lifetime. In the short term this can
+be handled by sharding Soup's data across multiple machines in a cluster,
+however, this is infeasible in the long term: sustained write workloads would
+continue to grow the base node state, regardless of whether the data is accessed
+by queries or not.
 
 To combat this, we would like to move either part or all of the state stored
 in base nodes to durable storage. This would reduce Soup's overall memory usage,
@@ -75,7 +75,8 @@ assert_equal(state.lookup(A), [[A, 1]])
 
 // Now, add an index on the second column:
 state.add_key([1])
-// ...which should return values that existed prior to the index being added:
+// ...which should return values that existed
+// prior to the index being added:
 assert_equal(state.lookup(1), [[A, 1], [B, 1]])
   \end{minted}
 
@@ -383,12 +384,13 @@ if let Some(row) = rows.into_iter().next() {
 \end{listing}
 
 \section{Persistent state with SQLite}
+
 The first iteration towards a durable state implementation uses SQLite as its
 storage engine. Described in section~\ref{sec:sqlite}, SQLite is a well-tested,
 heavily used system with a track record in everything from applications to other
 databases. SQLite uses B+trees internally---a reasonable, no frills data
 structure with easy-to-reason about performance guarantees. This makes it useful
-for a first prototype, and will help us answering the question of whether a
+for an initial prototype, and will help us answering the question of whether a
 B+tree based \code{PersistentState} is feasible following the requirements
 defined in~\ref{sec:requirements}. We will use the Rusqlite~\cite{rusqlite}
 library for calling into SQLite from Rust.

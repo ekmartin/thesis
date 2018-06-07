@@ -247,7 +247,7 @@ and that the focus should be on reducing run-time overhead, even if it comes at
 the cost of increased recovery latency. Regardless, recovering from an
 ever-growing log of entries is not a feasible choice. Applications with
 consistently high throughput would never be able to recover, as they would have
-to redo all operations that happened since the beginning of time.
+to redo all write operations previously performed by the system.
 
 To avoid an infinitely growing write-ahead log, main-memory databases
 \textit{checkpoint} their state at regular intervals~\cite{main-memory, dali,
@@ -310,10 +310,13 @@ when to take a snapshot, and which messages should be part of said snapshot.
       composite picture should be meaningful. The problem before us is to define
     “meaningful” and then to determine how the photographs should be taken.}''
   \end{displayquote}
+
+  \captionsetup{labelformat=empty}
+  \caption{Chandy and Lamport's description of the global snapshotting problem.}
 \end{figure}
 
 Chandy-Lamport's key insight was to introduce a marker message, used as a
-separator between messages that should be included in the snapshot, and messages
+separator between messages that should be included in the snapshot and messages
 that should not. Processes that receive a snapshot marker should immediately
 take a snapshot of all messages received prior to the marker, and forward the
 resulting state to a process capable of assembling all its received local

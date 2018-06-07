@@ -138,8 +138,8 @@ majority of the work is performed in separate snapshotting threads, leaving the
 state clone operation as the culprit. To avoid cloning altogether, snapshots
 would need to be maintained gradually, which could be achieved by maintaining a
 buffer of changes between snapshots, which could then be forwarded to the
-snapshotting worker and applied there. While this would avoid the need to clone
-the entire state, snapshot workers would now need to keep an entirely duplicate
+snapshotting worker and applied there. While this avoids the need to clone the
+entire state, snapshot workers would now need to keep an entirely duplicate
 clone of the snapshot state in memory, effectively doubling Soup's memory usage.
 
 Instead, snapshots could be maintained incrementally directly on durable

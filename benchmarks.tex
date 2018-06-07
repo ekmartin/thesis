@@ -179,7 +179,6 @@ cleared after recovery and between subsequent benchmark runs.
 The final benchmark measures the recovery time of our voting application, using
 the schema described in listing~\ref{lst:vote}. The database is first populated
 with a series of articles and votes, before being shut down and recovered from.
-
 The benchmark produces two measures: initial and total recovery time. The former
 records how long it takes for the first read to return correct data, while the
 latter only finishes when up-to-date data is returned from \textit{all} keys.

@@ -18,17 +18,16 @@ of materialized views.
 
 Soup achieves this through use of an incrementally maintained data-flow graph.
 New updates propagate through the graph at write-time, with pre-computed results
-stored at selected \textit{materialized} nodes throughout the graph. This
-moves the bulk of the workload from reads to writes, by allowing read operations
-to directly access computed state from materialized nodes further down the
-graph.
+stored at selected \textit{materialized} nodes throughout the graph. This moves
+the bulk of the workload from reads to writes, by giving read operations direct
+access to computed state from materialized nodes further down the graph.
 
 Soup ensures durability by persisting all updates to a write-ahead log before
 they are injected into the data-flow graph. While appending entries to a file is
 good for performance, recovering from an ever-growing log after a failure is far
 from feasible. This thesis improves Soup's durability situation with two main
 contributions: it moves Soup's otherwise in-memory table structures to durable
-storage, and implements snapshotting of Soup's materialized views. Both
+storage and implements snapshotting of Soup's materialized views. Both
 contributions were implemented in the open-source Soup prototype written in the
 Rust programming language, and a list of the changes is available in appendix A.
 
