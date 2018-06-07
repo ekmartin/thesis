@@ -1,32 +1,34 @@
 \section*{Sammendrag}
 
-Traditional database systems do not meet the throughput demands of today's web
-applications. Mitigation strategies on the form of intricate cache hierarchies
-and manual view materialization solve parts of the performance equation, at the
-cost of increasing complexity. Soup is a new structured storage system that
-scales to millions of reads per second on a single machine, without the
-architectural complexity seen in other storage deployments. By propagating
-updates through a data-flow graph, where pre-computed state is incrementally
-maintained at materialized nodes throughout the graph, Soup moves the majority
-of the processing work from reads to writes.
+Tradisjonelle databasesystemer møter ikke prestasjonskravene satt av dagens
+webapplikasjoner. Kompromisser i form av intrikate mellomlagringshierarkier og
+manuell materialisering av data løser deler av hastighetsproblemet, på
+bekostning av økt kompleksitet. Soup er et nytt strukturert lagringssystem som
+skalerer til millioner av lesninger per sekund på én maskin, uten
+overflødigheter observert i andre lagringsoppsett. Ved å propagere oppdateringer
+gjennom en dataflytsgraf, hvor forhåndsberegnede resultater opparbeides
+inkrementelt ved nodene i grafen, beveger Soup mye av prosesseringsarbeidet fra
+lesing til skriving.
 
-Soup stores all data in volatile main-memory and relies on a write-ahead log for
-durability. While fast memory access is crucial for frequently accessed
-materialized views, it is a cumbersome requirement for Soup's base tables, which
-only serve read requests at rare occasions. By implementing a disk-resident
-index structure on top of the RocksDB storage engine, this thesis moves Soup
-from a pure main-memory database to a structured storage system capable of
-handling datasets larger than its memory size, with only a small decrease in
-overall write throughput.
+Soup lagrer all data i flyktig hovedminne og skriver oppdateringer til en
+loggfil for å vedlikeholde data ved fatale feil. Selv om rask
+minnelesingshastighet er essensielt for mellomlagrede verdier som aksesseres
+ofte, er det et tungvint krav for kjernetabellene, da disse gjerne sjelden
+svarer på leseforespørsler. Ved å implementere en diskbasert indeksstruktur over
+RocksDB-lagringsmotoren, tar denne avhandlingen Soup fra å være et rent
+minnebasert system, til et strukturert lagringssystem kapabelt til å håndtere
+mer data enn det har plass til i minne, med kun en minimal nedgang i
+skrivegjennomstrømning.
 
-With its base tables stored safely on durable storage, Soup can recover from
-fatal failures by gradually building up its partially materialized views as
-needed. Similar to a system that recovers with an empty cache, this reduces
-initial performance while live requests slowly build up Soup's memory-based
-state. To completely remove the performance degradation of recovery, this thesis
-also implements a method of performing a global checkpoint of Soup's
-materialized state. By approaching the data-flow graph as a distributed system,
-the method performs a coordinated snapshot of all local state, allowing Soup to
-recover in about a tenth of the time.
+Med kjernetabellene lagret trygt på disk, kan Soup gjenopprettes etter feil ved
+gradvis oppbygging av partielt materialiserte resultater. I likhet med
+mellomlagringssystemer som starter uten innhold, fører dette til redusert
+initiell hastighet. Hastigheten økes sakte, men sikkert, ettersom forespørsler
+etter data fyller opp de minnebaserte mellomlagringslokasjonene. Med mål om å
+vedlikeholde samme hastighet, implementerer også denne avhandlingen en metode
+for å gjennomføre et globalt kontrollpunkt av lokal tilstand i Soup. Ved å se på
+dataflytsgrafen som et distribuert system, tar metoden et koordinert
+lagringsbilde av data i systemet, slik at Soup kan gjenopprettes på en tiendel
+av tiden ved feil.
 
 \newpage
