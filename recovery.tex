@@ -295,8 +295,6 @@ logical instant without it. Still, with snapshots happening roughly at the same
 physical time across the graph, the pause required from cloning a domain's
 entire state could have a significant impact on the system's total throughput.
 
-\todo{should have a figure here}
-
 Instead, we would like to amortize the performance penalty across a larger time
 range, by delaying the snapshotting process at each individual domain. While
 snapshots would still need to happen at the same \textit{logical} point across
