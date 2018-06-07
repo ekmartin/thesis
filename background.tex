@@ -417,11 +417,11 @@ program in listing~\ref{lst:soup-schema}, shown in
 figure~\ref{fig:example-graph}. Each box in the graph denotes a node, and a
 separate color is used for each domain. Updates are injected into a base
 node---either \code{Article} or \code{Vote}---before they propagate through the
-graph. Both base nodes are fully materialized---they serve as the source of
-truth for all data inserted into Soup. Continuing, we arrive at the egress and
-ingress nodes shown on level \textbf{II}. These act as connectors between
-separate domains, and facilitate communication either within a single Souplet or
-across machines if Soup is distributed across a cluster.
+graph. Both base nodes are fully materialized and serve as the source of truth
+for all data inserted into Soup. Continuing, we arrive at the egress and ingress
+nodes shown on the second level. These act as connectors between separate
+domains, and facilitate communication either within a single Souplet or across
+machines if Soup is distributed.
 
 \begin{figure}[H]
   \centering
@@ -434,7 +434,7 @@ across machines if Soup is distributed across a cluster.
   }\label{fig:example-graph}
 \end{figure}
 
-The third label, \textbf{III}, shows the first operator in the data-flow graph,
+The third label shows the first operator in the data-flow graph,
 an aggregator. Described by the gamma symbol ($ \gamma $), it performs the work
 of our \code{COUNT(uid)} clause. The aggregation is incrementally maintained,
 and the rest of the graph is notified of changes in the total count when the
@@ -443,13 +443,13 @@ count is no longer valid---followed by a positive record for the updated value.
 The fourth level contains a projection operator, responsible for picking out the
 correct fields in the correct order from its parent node.
 
-Moving along, we reach the join operator in our data-flow graph, responsible for
-combining rows from the \code{Article} and the \code{Vote} tables. Notice that
-the node is neither partially nor fully materialized---it contains no state at
-all. Whenever an update arrives from one of its parents, it requests the rows
-necessary to perform a join from the other parent. Similar to the aggregation,
-the join node is also followed by a projection, which in this case simply emits
-all the fields from the join.
+Moving along, we reach the join operator responsible for combining rows from the
+\code{Article} and the \code{Vote} tables. Notice that the node is neither
+partially nor fully materialized---it contains no state at all. Whenever an
+update arrives from one of its parents, it requests the rows necessary to
+perform a join from the other. Similar to the aggregation, the join node is also
+followed by a projection, which in this case simply emits all the fields from
+the join.
 
 Finally, we reach the reader node at the bottom of the graph labeled with the
 external query it serves requests for: \code{ArticleWithVoteCount}. While
