@@ -1,15 +1,13 @@
 \chapter{Background}\label{chap:background}
 
 This chapter describes various concepts relevant to the rest of this thesis,
-starting with an introduction to the system this thesis makes its contributions
-to---Soup. Afterwards, the Rust programming language is outlined, together with a
-look at the \code{bincode} serialization library, which is used for both
-snapshotting and persistent base tables. Following that, a few profiling
-concepts are described, used to reason about performance issues throughout the
-thesis. Finally, the two storage engines embedded in separate implementation
-iterations of persistent base tables are studied.
-
-% TODO: this sucks
+starting with an introduction to the system the contributions are implemented
+in, Soup. Afterwards, and outline of the Rust programming language follows,
+together with a look at the \code{bincode} serialization library and a few other
+core technical concepts used throughout the thesis. Finally, an overall view of
+the two different storage engines SQLite and RocksDB, used to implement the
+durable index structure described in chapter~\ref{chap:persistent-bases}, is
+given.
 
 \newpage
 
