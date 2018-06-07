@@ -70,8 +70,6 @@ stored rows.
 
 \subsubsection{Standalone indices}
 
-% TODO: Reducing the Storage Overhead of Main-Memory OLTP Databases with Hybrid Indexes
-
 In traditional relational database management systems, indices are usually
 maintained as separate data structures (\eg B-trees) with pointers to primary
 key values. Standalone indexing in~\cite{lsm-comparison} stores pointers as
@@ -100,7 +98,7 @@ costly list serialization and deserialization.
 
 \begin{table}[H]
   \centering
-  \begin{tabular}{l l l}
+  \begin{tabular}[t]{l l l}
     \toprule
     \textbf{id} & \textbf{brand} & \textbf{color} \\ \midrule
     1 & volvo & silver \\ \midrule
@@ -108,7 +106,7 @@ costly list serialization and deserialization.
     3 & audi & red \\ \bottomrule
   \end{tabular}
   \quad
-  \begin{tabular}{l l}
+  \begin{tabular}[t]{l l}
     \toprule
     \textbf{key} & \textbf{value} \\ \midrule
     volvo & [1, 2] \\ \midrule
@@ -134,7 +132,7 @@ CockroachDB~\cite{cockroach-design} implement secondary indices.
 
 \begin{table}[H]
   \centering
-  \begin{tabular}{l l l}
+  \begin{tabular}[t]{l l l}
     \toprule
     \textbf{id} & \textbf{brand} & \textbf{color} \\ \midrule
     1 & volvo & silver \\ \midrule
@@ -142,7 +140,7 @@ CockroachDB~\cite{cockroach-design} implement secondary indices.
     3 & audi & red \\ \bottomrule
   \end{tabular}
   \quad
-  \begin{tabular}{l l}
+  \begin{tabular}[t]{l l}
     \toprule
     \textbf{key} & \textbf{value} \\ \midrule
     volvo-1 & \\ \midrule
@@ -352,5 +350,3 @@ removes the need for Chandy-Lamport's explicit synchronization markers, and both
 Acharya-Badrinath~\cite{acharya} and Alagar-Venkatesan~\cite{alagar} present
 snapshotting algorithms where the initiator requests a snapshot directly from
 each node, reducing the required messages from $ O(e) $ to $ O(n) $.
-
-% TODO: write about Consistency Issues in Distributed Checkpoints
