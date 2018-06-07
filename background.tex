@@ -23,7 +23,6 @@ open-source code on GitHub\furl{https://github.com/mit-pdos/distributary/}.
 This section introduces Soup's core concepts.
 
 \subsection{Data-flow}
-\todo{figure that compares a traditional query graph to soup's data-flow}
 
 Applications using Soup define base table schemas and a set of queries ahead of
 time. Whereas the former is common in traditional relational database management
@@ -58,13 +57,37 @@ overlap between nodes. Instead, Soup only materializes and incrementally
 maintains state at nodes it considers \textit{stateful}, with other nodes
 referring upwards in the graph to its closest materialized ancestor node.
 
+\begin{figure}[H]
+  \centering
+  \includesvg[width=0.8\textwidth]{data-flow}
+  \caption{\
+    A simplified version of a Soup data-flow graph for a program that counts the
+    number of people with the same name. Insertions propagate from top to
+    bottom, where data is materialized at the necessary points. While all rows
+    are stored in the \code{People} base node, the aggregation operator ($
+    \gamma $) only retains the total count for each name, enabling efficient
+    reads.
+  }\label{fig:flow}
+\end{figure}
+
 The state at these materialized nodes is also kept \textit{partial} whenever
 possible. Instead of storing the results for all queries---like a materialized
 view does---Soup only retains state for records in the application's working
 set, evicting rarely used data. Queries for missing keys result in ancestor
-queries---\textit{replays}---to nodes further up the graph. Similar to cache
+queries (\textit{replays}) to nodes further up the graph. Similar to cache
 misses in other systems these eventually propagate all the way up to the base
 nodes, where a full copy of the state is always maintained.
+
+\begin{figure}[H]
+  \centering
+  \includesvg[width=\textwidth]{replay}
+  \caption{\
+    Queries for missing keys, in this case \code{X}, are fulfilled by requesting
+    replays from ancestors in the data-flow graph. Subsequent requests for
+    \code{X} will be fulfilled by the reader directly, avoiding the need for
+    further replaying.
+  }\label{fig:replay}
+\end{figure}
 
 \subsubsection{Migrations}
 
@@ -74,6 +97,16 @@ Performing migrations in traditional database systems, without downtime, is on
 the other hand far from trivial~\cite{stripe, gh-ost}. While Soup requires both
 the schema and all queries to be defined ahead of time, it handles changes in
 both seamlessly.
+
+\begin{figure}[H]
+  \centering
+  \includesvg[width=0.5\textwidth]{migrate}
+  \caption{\
+    To extend the program from figure~\ref{fig:data-flow} with a
+    query selecting rows by ID, Soup adds a projection operator and a reader to
+    the existing data-flow.
+  }\label{fig:migrate}
+\end{figure}
 
 Added queries extend the existing data-flow with additional nodes, while
 re-using as much as possible of the existing graph. New partially materialized
@@ -85,8 +118,6 @@ requests until all replays have completed. Review of the migrations performed
 during the lifetime of the HotCRP conference review
 program~\cite{hotcrp}---which uses MySQL---showed that these delays were rare,
 with Soup being able to transition 95\% of schema changes without downtime.
-
-\todo{figure of a changing data-flow graph}
 
 Changes to the base table schema happen in-place, and Soup's base nodes retain a
 full history of columns for each table. This ensures that both existing and new
@@ -103,8 +134,6 @@ one at a time, removing the need for locking within domains. Packet processing
 at domains include both regular updates and other types of packets, such as
 replay requests.
 
-\todo{figure that shows different domains}
-
 Domains are separated by egress and ingress nodes, responsible for maintaining
 communication across domain boundaries using a buffered channel. When Soup is
 run in a distributed fashion, communication between separate domains happen
@@ -120,8 +149,6 @@ of the requests in a single computational unit. This is where sharding comes in.
 By splitting the atom that is a single domain into multiple shards, both the
 computational load and the data stored at that domain can be spread between
 multiple computational units.
-
-\todo{show a figure with a sharder?}
 
 Balancing the data across a cluster is essential in scaling Soup to larger
 datasets. Without sharding, Soup's capabilities would be capped at the memory
@@ -145,8 +172,6 @@ an application-defined limit. This triggers an eviction notice sent to the
 largest domain---measured in state-size---which then takes care of propagating
 this eviction notice downstream in the graph to any nodes that might depend on
 the evicted state.
-
-\todo{might not be necessary, but could have an eviction figure here}
 
 The keys to evict at a specific node are picked randomly. In the future, this
 could be improved through more sophisticated eviction strategies, such as only
@@ -271,14 +296,26 @@ buffers and expose updated content to the readers with an atomic swap.
 
 \subsection{Architecture}\label{sec:soup-architecture}
 
-\todo{figure}
+Soup is composed of a series of components and runs distributed on an arbitrary
+number of machines. Each Soup cluster elects a single controller, which serves
+as an entry point for further communication. The bulk of the processing work
+happens within workers and readers.
+
+\begin{figure}[H]
+  \centering
+  \includesvg[width=0.8\textwidth]{architecture}
+  \caption{\
+    Clients communicate directly with readers and mutators for reads and writes.
+  }\label{fig:architecture}
+\end{figure}
 
 \subsubsection{Controller}
 
-At the heart of Soup lies a replicated controller, with a leader elected
-using ZooKeeper~\cite{zookeeper}. The controller is the first point of contact
-for Soup's external APIs, and is responsible for managing meta state, such as
-schemas and queries.
+At the heart of Soup lies a replicated controller, with a leader elected using
+ZooKeeper~\cite{zookeeper}. The controller is the first point of contact for
+Soup's external APIs, and is responsible for managing Soup's data-flow graph. In
+the face of a migration, the controller issues commands to the workers, to
+modify the graph as necessary to continue serving requests.
 
 \subsubsection{Souplets}
 
@@ -292,6 +329,15 @@ CPU core count.
 
 Communication between the Souplets and the controller happens over TCP, at the
 coordination layer.
+
+\subsubsection{Mutators}
+
+After contacting the controller to construct a mutator, clients inject updates
+directly into the Soup data-flow graph, without further controller
+communication. Each base node requires a separate mutator. The mutator API
+includes methods for inserting, deleting, and updating records. Clients receive
+acknowledgments when writes have been successfully persisted to Soup's
+write-ahead log and durability can be ensured.
 
 \subsubsection{Readers}
 
@@ -363,6 +409,57 @@ println!("{}", awvc.lookup(&[aid.into()], true));
   \caption{Soup example usage, where an article and a vote is inserted,
   followed by a read of the vote count.}\label{lst:soup-api}
 \end{listing}
+
+\subsubsection{Data-flow graph}
+
+As an example, let us consider the data-flow graph Soup generates for the
+program in listing~\ref{lst:soup-schema}, shown in
+figure~\ref{fig:example-graph}. Each box in the graph denotes a node, and a
+separate color is used for each domain. Updates are injected into a base
+node---either \code{Article} or \code{Vote}---before they propagate through the
+graph. Both base nodes are fully materialized---they serve as the source of
+truth for all data inserted into Soup. Continuing, we arrive at the egress and
+ingress nodes shown on level \textbf{II}. These act as connectors between
+separate domains, and facilitate communication either within a single Souplet or
+across machines if Soup is distributed across a cluster.
+
+\begin{figure}[H]
+  \centering
+  \includesvg[width=0.8\textwidth]{example-graph}
+  \caption{\
+    The data-flow graph produced by Soup for the example program shown in
+    listing~\ref{lst:soup-schema}. Nodes are marked with either \code{(full)} or
+    \code{(part.)}, depending on whether their state is fully or partially
+    materialized.
+  }\label{fig:example-graph}
+\end{figure}
+
+The third label, \textbf{III}, shows the first operator in the data-flow graph,
+an aggregator. Described by the gamma symbol ($ \gamma $), it performs the work
+of our \code{COUNT(uid)} clause. The aggregation is incrementally maintained,
+and the rest of the graph is notified of changes in the total count when the
+operator first emits a negative record---stating that the previous
+count is no longer valid---followed by a positive record for the updated value.
+The fourth level contains a projection operator, responsible for picking out the
+correct fields in the correct order from its parent node.
+
+Moving along, we reach the join operator in our data-flow graph, responsible for
+combining rows from the \code{Article} and the \code{Vote} tables. Notice that
+the node is neither partially nor fully materialized---it contains no state at
+all. Whenever an update arrives from one of its parents, it requests the rows
+necessary to perform a join from the other parent. Similar to the aggregation,
+the join node is also followed by a projection, which in this case simply emits
+all the fields from the join.
+
+Finally, we reach the reader node at the bottom of the graph labeled with the
+external query it serves requests for: \code{ArticleWithVoteCount}. While
+updates begin at the base nodes at the top, reads begin at the bottom. The
+reader here is partially materialized, letting it serve subsequent requests for
+the same key without further ado. Reads for keys missing in its state result in
+replays, which will propagate upwards through the graph until a node with
+materialized state for the specific key is reached. The replay then flows
+downwards again, until it reaches the reader, where the result is returned to
+the client.
 
 \subsection{MySQL Protocol Translation}\label{sec:mysql-shim}
 
@@ -553,11 +650,6 @@ continue without getting blocked by slow writes to persistent storage. Both of
 these components originate in Patrick O'Neil's original paper on
 LSM-trees~\cite{lsm}, where the in-memory data structure is referred to as $ C_0
 $, and the on-disk structures $ C_{1..n} $.
-
-% TODO:
-% * Calling into RocksDB (C-API, rust-rocksdb)
-% * Iterators
-% * Prefix Iteration/Slice Transform
 
 \subsection{MemTables}
 All writes are initially synchronously written to an in-memory data structure---a
@@ -877,8 +969,6 @@ deallocation, without the lowered performance of using something like a garbage
 collector. Each variable in Rust is assigned one and only one owner, and the
 variable is deallocated when that owner goes out of scope.
 
-% TODO: write a little more here
-
 \subsection{Foreign Function Interface}\label{sec:ffi}
 
 Rust has excellent support for calling into C programs, which lets developers
@@ -995,8 +1085,8 @@ fn main() {
 
 \section{Profiling}
 
-This section describes the tools used to reason about performance bottlenecks
-throughout the thesis.
+This section describes various tools used to reason about performance
+bottlenecks throughout the thesis.
 
 \subsection{CPU}
 

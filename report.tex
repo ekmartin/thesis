@@ -1,6 +1,13 @@
-\documentclass[b5paper]{report}
-% \documentclass[b5paper, twoside, openright]{report}
-% \usepackage[lmargin=25mm,rmargin=25mm,tmargin=27mm,bmargin=30mm]{geometry}
+% 0 for single page, 1 for book:
+\def\mode{0}
+
+\if 0\mode
+  \documentclass[b5paper]{report}
+\else
+  \documentclass[b5paper, twoside, openright]{report}
+\fi
+
+\usepackage{fancyhdr}
 \usepackage[tmargin=27mm, bmargin=30mm]{geometry}
 % \usepackage[a4,center,frame]{crop}
 
@@ -33,6 +40,14 @@
 \usepackage{biolinum}
 \usepackage{titlesec}
 \titleformat*{\subsubsection}{\large\bfseries}
+
+\fancyhf{}
+
+\if 0\mode
+  \fancyhead[LO,LE]{\textsc{\leftmark}}
+\else
+  \fancyhead[LO,RE]{\textsc{\leftmark}}
+\fi
 
 \graphicspath{{images/}}
 \svgpath{{images/}}
@@ -99,6 +114,8 @@
 \ChNumVar{\fontsize{60}{62}\usefont{OT1}{qpl}{m}{n}\selectfont}
 \ChTitleVar{\Huge\bfseries\rm}
 \ChRuleWidth{1pt}
+
+\pagestyle{fancy}
 
 \input{introduction}
 \input{background}
