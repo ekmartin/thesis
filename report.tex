@@ -34,7 +34,6 @@
 \usepackage[Lenny]{fncychap}
 
 %% Font:
-% \usepackage{lmodern}
 \usepackage[libertine]{newtxmath}
 \usepackage{libertineRoman}
 \usepackage{biolinum}
@@ -85,22 +84,49 @@
   citecolor=LinkColor,
 }
 
+\author{Lars Martin Bævre Ek}
+\title{Durability in a data-flow storage system}
+
+% Title page and project description
+\def\professor{Kjetil Nørvåg, IDI}
+
+\newcommand{\titlefont}{\fontfamily{lmss}\fontsize{2.3em}{0em}\selectfont}
+\newcommand{\authorfont}{\fontfamily{lmss}\fontsize{1.6em}{0em}\selectfont\bfseries}
+\newcommand{\frontpagefont}{\fontfamily{lmss}\fontsize{1.15em}{1.3em}\selectfont}
+\newcommand{\newlinetitle}{\par\noindent }
+\newcommand*{\frontpage}{%
+  \renewcommand{\arraystretch}{1}
+  \thispagestyle{empty}
+  \begingroup
+    \vbox{%
+      \vspace*{-1cm}
+      {\noindent\includegraphics[width=6cm]{ntnu}\par}\vspace{3cm}
+      {\noindent\titlefont{Durability in a data-flow storage system}\par}\vspace{.8cm}
+      {\noindent\authorfont{Lars Martin Bævre Ek}\par}
+    }%
+    \vfill
+    \vbox{%
+      \frontpagefont
+      {\noindent%
+        \begin{tabbing}
+         Master of Science in Computer Science \\
+         Submission date: \= June 2018 \\
+         Supervisor: \> \professor \\
+       \end{tabbing}\par
+      }\vspace{.8cm}
+      {\noindent Norwegian University of Science and Technology\\Department of
+      Computer Science}
+    }%
+    \null
+  \endgroup%
+  \cleardoublepage%
+  \renewcommand{\arraystretch}{1.2}
+}%
+
+
 \begin{document}
 
-\begin{titlepage}
-  \centering
-	\includegraphics[width=0.55\textwidth]{ntnu}\par\vspace{1cm}
-	{\scshape\Large TDT4900 Master's Thesis \par}
-	\vspace{1.5cm}
-	{\huge\bfseries Durability in a data-flow storage system\par}
-	\vspace{2cm}
-	{\Large\itshape Lars Martin Bævre Ek \\ \texttt{larek@stud.ntnu.no} \par}
-	\vfill
-	supervised by\par
-  Professor Kjetil \textsc{Nørvåg}
-
-	{\large \today\par}
-\end{titlepage}
+\frontpage
 
 \input{macros}
 
