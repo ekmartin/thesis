@@ -61,7 +61,6 @@ packets that are passed on to the rest of the data-flow graph. This speeds up
 recovery performance by avoiding processing of a potentially large amount of
 small log entries.
 
-
 \begin{figure}[H]
   \includesvg[width=\textwidth]{log-chunking}
   \caption{\
@@ -139,9 +138,9 @@ the same logical point in time across the graph---ensuring that every in-flight
 update is either propagated to \textit{all} nodes in the graph---or none of
 them, leading to a consistent state after recovering from a failure. At the same
 time, taking a snapshot should not incur a too heavy performance cost on the
-running system, and should definitely not stop the system from processing
-updates completely---for any period of time. This lets us derive a few base
-rules for our snapshotting algorithm:
+running system and should definitely not stop the system from processing updates
+completely---for any period of time. This lets us derive a few base rules for
+our snapshotting algorithm:
 
 \begin{enumerate}
   \item Snapshots need to include exactly the same updates across the graph.
@@ -168,9 +167,9 @@ the system's throughput.
   \centering
   \includesvg[width=0.6\textwidth]{bad-example}
   \caption{\
-    An update \texttt{A} propagates through the domains in the graph in an
-    asynchronous manner. Domains 2 and 3 contain at least one materialized node,
-    and should be snapshotted.
+    An update \texttt{X} propagates through the domains in the graph in an
+    asynchronous manner. Domains $ B $ and $ C $ contain at least one
+    materialized node and should be snapshotted.
   }\label{fig:bad-example}
 \end{figure}
 
@@ -188,7 +187,7 @@ point in time, even if the actual snapshots were instantiated at different
   \centering
   \includesvg[width=0.6\textwidth]{good-example}
   \caption{\
-    An update \texttt{A} is propagated through the data-flow graph, followed by
+    An update \texttt{X} is propagated through the data-flow graph, followed by
     a snapshot marker to ensure that domains with materialized nodes snapshot at
     the correct time.
   }\label{good-example}
@@ -393,7 +392,7 @@ time to take a snapshot.
 
 \begin{figure}[H]
   \begin{center}
-    \includesvg[width=0.4\textwidth]{take-snapshot}
+    \includesvg[width=0.6\textwidth]{take-snapshot}
     \caption{\
       Snapshots are initialized when the controller sends a
       \texttt{TakeSnapshot} packet, which is forwarded through the data-flow
@@ -618,15 +617,23 @@ described so far immediately snapshots when a marker is received and ignores
 subsequently received snapshot markers. With packets propagating through the
 data-flow graph asynchronously, snapshotting after the first marker is received
 could produce inconsistent snapshots. Consider the case in
-figure~\ref{fig:diamond}, where the snapshot marker from node $ A $ arrives at $
-C $ ahead of the marker from $ B $. Snapshots performed when the marker from $ A
-$ arrives would not include the propagated update from $ B $, while delaying the
-snapshotting until the marker has arrived from $ B $ would potentially include
-update $ Y $ in the snapshot, breaking the properties defined by the
+figure~\ref{fig:diamond}, where the snapshot marker from node $ B $ arrives at $
+D $ ahead of the marker from $ C $. Snapshots performed when the marker from $ B
+$ arrives would not include the propagated update from $ C $, while delaying the
+snapshotting until the marker has arrived from $ C $ would potentially include
+update $ U_Y $ in the snapshot, breaking the properties defined by the
 Chandy-Lamport algorithm.
 
-% TODO: figure here (diamond)
-
-Instead, $ C $ should wait with snapshotting until it has received the marker
+Instead, $ D $ should wait with snapshotting until it has received the marker
 from both of its parents, while blocking further updates from parents that it
 has already received the marker from.
+
+\begin{figure}
+  \centering
+  \includesvg[width=0.8\textwidth]{diamond}
+  \caption{\
+    Updates propagate through the data-flow graph asynchronously. To correctly
+    create a consistent snapshot, domain $ D $ should delay processing of $ U_Y
+    $ until it has received the marker from both $ B $ and $ C $.
+  }\label{fig:diamond}
+\end{figure}
